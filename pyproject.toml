@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "URAdime"
+version = "0.1.4"
+authors = [
+    { name="Jason D Limberis", email="Jason.Limberis@ucsf.edu" },
+]
+description = "Universal Read Analysis of DIMErs"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+keywords = ["PCR", "primers", "DNA", "sequencing", "analysis"]
+license = "MIT"
+dependencies = [
+    "pysam",
+    "pandas",
+    "biopython",
+    "python-Levenshtein",
+    "tqdm",
+    "numpy",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/SemiQuant/URAdime"
+"Bug Tracker" = "https://github.com/SemiQuant/URAdime/issues"
+
+[project.scripts]
+uradime = "URAdime.URAdime:main"

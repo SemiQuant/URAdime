@@ -1,0 +1,9 @@
+Category,Count,Percentage
+No primers or terminal matches detected,120,12.5
+Single terminal match only,120,12.5
+Paired terminal matches,120,12.5
+One full primer + one terminal match,120,12.5
+Single-end primers only (no terminal match),120,12.5
+Mismatched or multi-primer pairs,120,12.5
+"Matched pairs - correct orientation, wrong size",120,12.5
+Matched pairs - correct orientation and size,120,12.5

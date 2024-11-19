@@ -1,0 +1,959 @@
+#!/usr/bin/env python3
+"""
+URAdime (Universal Read Analysis of DIMErs)
+A tool for analyzing primer dimers and other artifacts in sequencing data.
+This script processes BAM files to identify primer sequences at read ends
+and analyzes their relationships and orientations.
+"""
+
+import argparse
+import pysam
+import pandas as pd
+from Bio.Seq import Seq
+import Levenshtein as lev
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Dict, Tuple
+import numpy as np
+from tqdm import tqdm
+import os
+import sys
+import random
+
+def load_primers(primer_file):
+    """
+    Load and prepare primers from a tab-separated file.
+    
+    Args:
+        primer_file (str): Path to tab-separated primer file containing Name, Forward, Reverse, and Size columns
+        
+    Returns:
+        tuple: (primers_df, longest_primer_length)
+            - primers_df: DataFrame containing primer information
+            - longest_primer_length: Length of the longest primer sequence
+            
+    Raises:
+        FileNotFoundError: If primer file doesn't exist
+    """
+    if not os.path.exists(primer_file):
+        raise FileNotFoundError(f"Primer file not found: {primer_file}")
+        
+    primers_df = pd.read_csv(primer_file, sep="\t")
+    primers_df = primers_df.dropna(subset=['Forward', 'Reverse'])
+    longest_primer_length = max(
+        primers_df['Forward'].apply(len).max(), 
+        primers_df['Reverse'].apply(len).max()
+    )
+    return primers_df, longest_primer_length
+
+def is_match(seq1, seq2, max_distance):
+    """
+    Check for approximate match between two sequences using Levenshtein distance.
+    Handles case-insensitive comparison and treats N's as potential matches.
+    
+    Args:
+        seq1 (str): First sequence
+        seq2 (str): Second sequence
+        max_distance (int): Maximum allowed Levenshtein distance
+        
+    Returns:
+        bool: True if sequences match within specified distance
+    """
+    if not seq1 or not seq2:
+        return False
+    
+    try:
+        # Convert to uppercase and remove N's for comparing lengths
+        seq1 = str(seq1).upper()
+        seq2 = str(seq2).upper()
+        
+        for i in range(len(seq1) - len(seq2) + 1):
+            window = seq1[i:i+len(seq2)]
+            if len(window) == len(seq2):
+                # Calculate distance considering N's as potential matches
+                distance = 0
+                for w, s in zip(window, seq2):
+                    if w != s and w != 'N' and s != 'N':
+                        distance += 1
+                        if distance > max_distance:
+                            break
+                
+                if distance <= max_distance:
+                    return True
+    except:
+        return False
+    return False
+
+def check_terminal_match(sequence, primer, terminus_length=15, max_distance=2):
+    """
+    Check for partial matches at sequence termini, including reverse complements.
+    
+    Args:
+        sequence (str): DNA sequence to search
+        primer (str): Primer sequence to look for
+        terminus_length (int): Minimum length of terminus to check
+        max_distance (int): Maximum allowed Levenshtein distance
+    
+    Returns:
+        tuple: (bool, int) - (whether match found, length of longest match found)
+    """
+    if len(sequence) < terminus_length or len(primer) < terminus_length:
+        return False, 0
+        
+    primer_rc = str(Seq(primer).reverse_complement())
+    best_match_length = 0
+    found_match = False
+    
+    # Check all possible combinations:
+    # 1. Start of sequence vs start of primer
+    # 2. Start of sequence vs RC of end of primer
+    # 3. End of sequence vs RC of start of primer
+    # 4. End of sequence vs end of primer
+    
+    combinations = [
+        (sequence[:terminus_length], primer[:terminus_length]),  # Start vs Start
+        (sequence[:terminus_length], primer_rc[-terminus_length:]),  # Start vs RC End
+        (sequence[-terminus_length:], primer_rc[:terminus_length]),  # End vs RC Start
+        (sequence[-terminus_length:], primer[-terminus_length:])  # End vs End
+    ]
+    
+    for seq_part, primer_part in combinations:
+        # Try progressively larger windows
+        for window_size in range(terminus_length, min(len(sequence), len(primer)) + 1):
+            if len(seq_part) >= window_size and len(primer_part) >= window_size:
+                if is_match(seq_part[:window_size], primer_part[:window_size], max_distance):
+                    found_match = True
+                    best_match_length = max(best_match_length, window_size)
+                else:
+                    break  # Stop increasing window size if no match found
+    
+    return found_match, best_match_length
+
+def find_primers_in_region(sequence, primers_df, window_size=20, max_distance=2, check_termini=True, terminus_length=15):
+    """Search for primer sequences within a given region of DNA sequence."""
+    full_matches = []
+    terminal_matches = []
+    
+    # Create a mask to track which positions in the sequence have been matched
+    matched_positions = set()
+    
+    for _, primer in primers_df.iterrows():
+        forward_primer = primer['Forward']
+        reverse_primer = primer['Reverse']
+        
+        # Check for full matches first
+        forward_match = is_match(sequence[:window_size + len(forward_primer)], forward_primer, max_distance)
+        reverse_match = is_match(sequence[:window_size + len(reverse_primer)], reverse_primer, max_distance)
+        forward_rc_match = is_match(sequence[:window_size + len(forward_primer)], 
+                                  str(Seq(forward_primer).reverse_complement()), max_distance)
+        reverse_rc_match = is_match(sequence[:window_size + len(reverse_primer)], 
+                                  str(Seq(reverse_primer).reverse_complement()), max_distance)
+        
+        # Add full matches
+        if forward_match:
+            full_matches.append(f"{primer['Name']}_Forward")
+        if reverse_match:
+            full_matches.append(f"{primer['Name']}_Reverse")
+        if forward_rc_match:
+            full_matches.append(f"{primer['Name']}_ForwardComp")
+        if reverse_rc_match:
+            full_matches.append(f"{primer['Name']}_ReverseComp")
+        
+        # Check for terminal matches if no full match was found
+        if check_termini and not any([forward_match, reverse_match, forward_rc_match, reverse_rc_match]):
+            # Check forward primer terminal matches
+            fwd_match_found, fwd_match_length = check_terminal_match(
+                sequence, forward_primer, terminus_length, max_distance
+            )
+            if fwd_match_found:
+                terminal_matches.append(f"{primer['Name']}_Forward_Terminal_{fwd_match_length}bp")
+            
+            # Check reverse primer terminal matches
+            rev_match_found, rev_match_length = check_terminal_match(
+                sequence, reverse_primer, terminus_length, max_distance
+            )
+            if rev_match_found:
+                terminal_matches.append(f"{primer['Name']}_Reverse_Terminal_{rev_match_length}bp")
+    
+    return {
+        'full_matches': list(set(full_matches)),
+        'terminal_matches': list(set(terminal_matches))
+    }
+
+def process_read_chunk(chunk: List[pysam.AlignedSegment], primers_df: pd.DataFrame, 
+                      window_size: int, unaligned_only: bool,
+                      max_distance: int = 2, check_termini: bool = True,  # Changed default to True
+                      terminus_length: int = 10) -> List[Dict]:
+    """
+    Process a chunk of sequencing reads in parallel to identify primers.
+    """
+    chunk_data = []
+    
+    # Calculate max primer length once for efficiency
+    max_primer_length = max(
+        primers_df['Forward'].apply(len).max(),
+        primers_df['Reverse'].apply(len).max()
+    )
+    
+    # Adjusted window size including primer length
+    effective_window = window_size + max_primer_length
+    
+    for read in chunk:
+        if unaligned_only and not read.is_unmapped:
+            continue
+        if read.query_sequence is None:
+            continue
+
+        read_sequence = read.query_sequence
+        read_length = len(read_sequence)
+        
+        # Get sequences from both ends of the read
+        start_region = read_sequence[:min(effective_window, read_length)]
+        end_start_pos = max(0, read_length - effective_window)
+        end_region = read_sequence[end_start_pos:]
+        
+        # Process start primers
+        start_results = find_primers_in_region(
+            start_region, 
+            primers_df, 
+            window_size=window_size,
+            max_distance=max_distance,
+            check_termini=check_termini,
+            terminus_length=terminus_length
+        )
+        
+        # Process end primers with reversed sequence
+        end_results = find_primers_in_region(
+            str(Seq(end_region).reverse_complement()),
+            primers_df,
+            window_size=window_size,
+            max_distance=max_distance,
+            check_termini=check_termini,
+            terminus_length=terminus_length
+        )
+        
+        chunk_data.append({
+            'Read_Name': read.query_name,
+            'Start_Primers': ', '.join(start_results['full_matches']) if start_results['full_matches'] else 'None',
+            'End_Primers': ', '.join(end_results['full_matches']) if end_results['full_matches'] else 'None',
+            'Start_Terminal_Matches': ', '.join(start_results['terminal_matches']) if start_results['terminal_matches'] else 'None',
+            'End_Terminal_Matches': ', '.join(end_results['terminal_matches']) if end_results['terminal_matches'] else 'None',
+            'Read_Length': read_length,
+            'Start_Region_Length': len(start_region),
+            'End_Region_Length': len(end_region)
+        })
+    
+    return chunk_data
+
+    
+def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, debug=False):
+    """
+    Create comprehensive summary of primer analysis results.
+    Takes into account multiple primers as mismatches and splits terminal categories.
+    """
+    if result_df.empty:
+        print("No reads to analyze in the results dataframe")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        
+    total_reads = len(result_df)
+    
+    def count_primers(primer_str):
+        """Count number of primers in comma-separated string"""
+        if primer_str == 'None':
+            return 0
+        return len([p for p in primer_str.split(',') if p.strip()])
+
+    def get_base_primer_name(primer_str):
+        if primer_str == 'None':
+            return None
+        primer_str = primer_str.split(',')[0].strip()
+        return primer_str.rsplit('_', 1)[0]
+    
+    def get_primer_orientation(primer_str):
+        """Get orientation from primer string (Forward/Reverse/ForwardComp/ReverseComp)"""
+        if primer_str == 'None':
+            return None
+        primer_str = primer_str.split(',')[0].strip()
+        return primer_str.rsplit('_', 1)[1]
+    
+    # Add number of primers columns
+    result_df['Start_Primer_Count'] = result_df['Start_Primers'].apply(count_primers)
+    result_df['End_Primer_Count'] = result_df['End_Primers'].apply(count_primers)
+    
+    # Add primer name columns
+    result_df['Start_Primer_Name'] = result_df['Start_Primers'].apply(get_base_primer_name)
+    result_df['End_Primer_Name'] = result_df['End_Primers'].apply(get_base_primer_name)
+    
+    # Add terminal match counts
+    result_df['Start_Terminal_Count'] = result_df['Start_Terminal_Matches'].apply(count_primers)
+    result_df['End_Terminal_Count'] = result_df['End_Terminal_Matches'].apply(count_primers)
+    
+    
+    # Identify different categories
+    
+    # 1. No matches at all
+    no_matches = result_df[
+        (result_df['Start_Primers'] == 'None') & 
+        (result_df['End_Primers'] == 'None') &
+        (result_df['Start_Terminal_Matches'] == 'None') &
+        (result_df['End_Terminal_Matches'] == 'None')
+    ]
+    
+    # 2a. Single terminal matches (terminal match at only one end, no full primers)
+    single_terminal = result_df[
+        (result_df['Start_Primers'] == 'None') & 
+        (result_df['End_Primers'] == 'None') &
+        ((result_df['Start_Terminal_Matches'] != 'None') & (result_df['End_Terminal_Matches'] == 'None') |
+         (result_df['Start_Terminal_Matches'] == 'None') & (result_df['End_Terminal_Matches'] != 'None'))
+    ]
+    
+    # 2b. Paired terminal matches (terminal matches at both ends, no full primers)
+    paired_terminal = result_df[
+        (result_df['Start_Primers'] == 'None') & 
+        (result_df['End_Primers'] == 'None') &
+        (result_df['Start_Terminal_Matches'] != 'None') & 
+        (result_df['End_Terminal_Matches'] != 'None')
+    ]
+    
+    # 3. Hybrid cases - one full primer and one terminal match
+    hybrid_matches = result_df[
+        ((result_df['Start_Primers'] != 'None') & (result_df['End_Primers'] == 'None') & (result_df['End_Terminal_Matches'] != 'None')) |
+        ((result_df['Start_Primers'] == 'None') & (result_df['End_Primers'] != 'None') & (result_df['Start_Terminal_Matches'] != 'None'))
+    ]
+    
+    # 4. Single-end primers only (no terminal match on other end)
+    single_end_only = result_df[
+        ((result_df['Start_Primers'] != 'None') & (result_df['End_Primers'] == 'None') & (result_df['End_Terminal_Matches'] == 'None')) |
+        ((result_df['Start_Primers'] == 'None') & (result_df['End_Primers'] != 'None') & (result_df['Start_Terminal_Matches'] == 'None'))
+    ]
+    
+    # 5. Full matched pairs (both ends have full primers)
+    matched_pairs = result_df[
+        (result_df['Start_Primers'] != 'None') & 
+        (result_df['End_Primers'] != 'None') &
+        (result_df['Start_Primer_Count'] == 1) &
+        (result_df['End_Primer_Count'] == 1) &
+        (result_df['Start_Primer_Name'] == result_df['End_Primer_Name'])
+    ].copy()
+    
+    # 6. Mismatched pairs
+    mismatched_pairs = result_df[
+        (result_df['Start_Primers'] != 'None') & 
+        (result_df['End_Primers'] != 'None') &
+        ((result_df['Start_Primer_Count'] > 1) |
+         (result_df['End_Primer_Count'] > 1) |
+         (result_df['Start_Primer_Name'] != result_df['End_Primer_Name']))
+    ]
+    
+    def is_correct_orientation(row):
+        if pd.isna(row['Start_Primers']) or pd.isna(row['End_Primers']):
+            return False
+        start_orient = get_primer_orientation(row['Start_Primers'])
+        end_orient = get_primer_orientation(row['End_Primers'])
+        return ((start_orient.startswith('Forward') and end_orient.startswith('Reverse')) or
+                (start_orient.startswith('Reverse') and end_orient.startswith('Forward')))
+    
+    def is_size_compliant(row, ignore_amplicon_size):
+        if ignore_amplicon_size:
+            return True
+        primer_name = get_base_primer_name(row['Start_Primers'])
+        expected = primer_sizes.get(primer_name)
+        if pd.isna(expected):
+            return False
+        tolerance = expected * 0.10
+        return abs(row['Read_Length'] - expected) <= tolerance
+    
+    primer_sizes = primers_df.set_index('Name')['Size'].to_dict()
+    
+    if not matched_pairs.empty:
+        matched_pairs['Correct_Orientation'] = matched_pairs.apply(is_correct_orientation, axis=1)
+        matched_pairs['Size_Compliant'] = matched_pairs.apply(
+            lambda x: is_size_compliant(x, ignore_amplicon_size), axis=1
+        )
+    
+    # Create summary data with split terminal categories
+    summary_data = [
+        {
+            'Category': 'No primers or terminal matches detected',
+            'Count': len(no_matches),
+            'Percentage': (len(no_matches) / total_reads) * 100
+        },
+        {
+            'Category': 'Single terminal match only',
+            'Count': len(single_terminal),
+            'Percentage': (len(single_terminal) / total_reads) * 100
+        },
+        {
+            'Category': 'Paired terminal matches',
+            'Count': len(paired_terminal),
+            'Percentage': (len(paired_terminal) / total_reads) * 100
+        },
+        {
+            'Category': 'One full primer + one terminal match',
+            'Count': len(hybrid_matches),
+            'Percentage': (len(hybrid_matches) / total_reads) * 100
+        },
+        {
+            'Category': 'Single-end primers only (no terminal match)',
+            'Count': len(single_end_only),
+            'Percentage': (len(single_end_only) / total_reads) * 100
+        },
+        {
+            'Category': 'Mismatched or multi-primer pairs',
+            'Count': len(mismatched_pairs),
+            'Percentage': (len(mismatched_pairs) / total_reads) * 100
+        }
+    ]
+    
+    if not matched_pairs.empty:
+        correct_orient = matched_pairs[matched_pairs['Correct_Orientation']]
+        correct_orient_wrong_size = correct_orient[~correct_orient['Size_Compliant']]
+        correct_orient_right_size = correct_orient[correct_orient['Size_Compliant']]
+        
+        summary_data.extend([
+            {
+                'Category': 'Matched pairs - correct orientation, wrong size',
+                'Count': len(correct_orient_wrong_size),
+                'Percentage': (len(correct_orient_wrong_size) / total_reads) * 100
+            },
+            {
+                'Category': 'Matched pairs - correct orientation and size',
+                'Count': len(correct_orient_right_size),
+                'Percentage': (len(correct_orient_right_size) / total_reads) * 100
+            }
+        ])
+    
+    summary_df = pd.DataFrame(summary_data)
+    summary_df['Percentage'] = summary_df['Percentage'].round(2)
+    
+    return summary_df, matched_pairs, mismatched_pairs
+
+def downsample_reads(bam_path: str, percentage: float, max_reads: int = 0) -> List[pysam.AlignedSegment]:
+    """
+    Downsample reads from a BAM file based on a percentage.
+    
+    Args:
+        bam_path (str): Path to the BAM file
+        percentage (float): Percentage of reads to keep (0.1-100.0)
+        max_reads (int): Maximum number of reads to process (0 for all reads)
+    
+    Returns:
+        List[pysam.AlignedSegment]: List of downsampled reads
+    """
+    if not (0.1 <= percentage <= 100.0):
+        raise ValueError("Downsampling percentage must be between 0.1 and 100.0")
+        
+    print(f"Loading and downsampling BAM file to {percentage}% of reads...")
+    
+    try:
+        bam_file = pysam.AlignmentFile(bam_path, "rb")
+        
+        # First pass to count total reads if needed
+        total_reads = 0
+        if max_reads == 0:
+            print("Counting total reads...")
+            for _ in tqdm(bam_file.fetch(until_eof=True)):
+                total_reads += 1
+            bam_file.reset()
+        else:
+            total_reads = max_reads
+            
+        # Calculate number of reads to keep
+        keep_probability = percentage / 100.0
+        target_reads = int(total_reads * keep_probability)
+        
+        if max_reads > 0:
+            target_reads = min(target_reads, max_reads)
+            
+        print(f"Targeting {target_reads} reads after {percentage}% downsampling")
+        
+        # Second pass to collect downsampled reads
+        downsampled_reads = []
+        reads_processed = 0
+        
+        for read in tqdm(bam_file.fetch(until_eof=True), total=total_reads):
+            reads_processed += 1
+            
+            # Use reservoir sampling if we don't know total reads
+            if max_reads == 0:
+                if len(downsampled_reads) < target_reads:
+                    downsampled_reads.append(read)
+                else:
+                    j = random.randint(0, reads_processed)
+                    if j < target_reads:
+                        downsampled_reads[j] = read
+            # Otherwise use simple random sampling
+            else:
+                if random.random() < keep_probability:
+                    downsampled_reads.append(read)
+                    if len(downsampled_reads) >= target_reads:
+                        break
+            
+            if max_reads > 0 and reads_processed >= max_reads:
+                break
+                
+        bam_file.close()
+        
+        print(f"Selected {len(downsampled_reads)} reads after downsampling")
+        return downsampled_reads
+        
+    except Exception as e:
+        print(f"Error during downsampling: {e}")
+        return []
+
+def bam_to_fasta_parallel(bam_path: str, primer_file: str, window_size: int = 20, 
+                         unaligned_only: bool = False, max_reads: int = 200, 
+                         num_threads: int = 4, chunk_size: int = 50, 
+                         downsample_percentage: float = 100.0,
+                         max_distance: int = 2) -> pd.DataFrame:
+    """
+    Process BAM file and find primers in reads using multiple threads.
+    
+    This function coordinates the parallel processing of BAM reads,
+    managing thread pools and combining results from multiple workers.
+    
+    Args:
+        bam_path: Path to input BAM file
+        primer_file: Path to primer information file
+        window_size: Size of window to search for primers
+        unaligned_only: Whether to process only unaligned reads
+        max_reads: Maximum number of reads to process
+        num_threads: Number of parallel processing threads
+        chunk_size: Number of reads per processing chunk
+        downsample_percentage: Percentage of reads to randomly sample
+        max_distance: Maximum allowed Levenshtein distance for primer matching
+        
+    Returns:
+        pd.DataFrame: DataFrame containing results of primer analysis for all processed reads
+    """
+    # Validate input files
+    if not os.path.exists(bam_path):
+        raise FileNotFoundError(f"BAM file not found: {bam_path}")
+    
+    # Load primers
+    primers_df, _ = load_primers(primer_file)
+    
+    print(f"Loading BAM file: {bam_path}")
+    
+    # Perform downsampling
+    all_reads = downsample_reads(bam_path, downsample_percentage, max_reads)
+    
+    if not all_reads:
+        print("No reads selected after downsampling")
+        return pd.DataFrame()
+    
+    print(f"Processing {len(all_reads)} reads with {num_threads} threads...")
+    
+    chunks = [all_reads[i:i + chunk_size] for i in range(0, len(all_reads), chunk_size)]
+    
+    all_data = []
+    
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        future_to_chunk = {
+            executor.submit(
+                process_read_chunk, 
+                chunk, 
+                primers_df, 
+                window_size, 
+                unaligned_only,
+                max_distance  # Pass max_distance to process_read_chunk
+            ): chunk for chunk in chunks
+        }
+        
+        for future in tqdm(as_completed(future_to_chunk), total=len(chunks), desc="Processing chunks"):
+            try:
+                chunk_data = future.result()
+                all_data.extend(chunk_data)
+            except Exception as e:
+                print(f"Error processing chunk: {e}")
+    
+    if not all_data:
+        print("No data was processed successfully")
+        return pd.DataFrame()
+        
+    return pd.DataFrame(all_data)
+
+def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int = 20,
+                             num_threads: int = 4, max_reads: int = 200, chunk_size: int = 50,
+                             ignore_amplicon_size: bool = False,
+                             max_distance: int = 2, 
+                             downsample_percentage: float = 100.0,
+                             unaligned_only: bool = False,
+                             debug: bool = False):
+    """
+    Complete analysis pipeline using parallel processing.
+    """
+    print(f"Starting analysis with {num_threads} threads...")
+    
+    try:
+        # Get all results at once instead of processing in chunks
+        result_df = bam_to_fasta_parallel(
+            bam_path=bam_path,
+            primer_file=primer_file,
+            window_size=window_size,
+            max_reads=max_reads,
+            num_threads=num_threads,
+            chunk_size=chunk_size,
+            max_distance=max_distance,
+            downsample_percentage=downsample_percentage,
+            unaligned_only=unaligned_only
+        )
+        
+        if result_df.empty:
+            print("No results generated. Check input files and parameters.")
+            return None
+        
+        print(f"\nProcessed {len(result_df)} reads successfully")
+        
+        primers_df, _ = load_primers(primer_file)
+        
+        # Process all data at once
+        summary_df, matched_pairs, mismatched_pairs = create_analysis_summary(
+            result_df.copy(),  # Use copy to prevent modifications
+            primers_df,
+            ignore_amplicon_size=ignore_amplicon_size,
+            debug=debug
+        )
+        
+        print("\nAnalysis Summary:")
+        print(summary_df.to_string(index=False))
+        
+        return {
+            'results': result_df.copy(),
+            'summary': summary_df,
+            'matched_pairs': matched_pairs.copy() if not matched_pairs.empty else pd.DataFrame(),
+            'mismatched_pairs': mismatched_pairs.copy() if not mismatched_pairs.empty else pd.DataFrame()
+        }
+        
+    except Exception as e:
+        print(f"Error in analysis pipeline: {str(e)}")
+        return None
+
+def parse_arguments():
+    """Parse command line arguments for URAdime."""
+    parser = argparse.ArgumentParser(
+        description="URAdime - Universal Read Analysis of DIMErs",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    
+    parser.add_argument(
+        "-b", "--bam",
+        required=True,
+        help="Input BAM file path"
+    )
+    
+    parser.add_argument(
+        "-p", "--primers",
+        required=True,
+        help="Tab-separated primer file containing columns: Name, Forward, Reverse, Size"
+    )
+    
+    parser.add_argument(
+        "-o", "--output",
+        default="uradime_results",
+        help="Output prefix for result files"
+    )
+    
+    parser.add_argument(
+        "-t", "--threads",
+        type=int,
+        default=4,
+        help="Number of threads to use for parallel processing"
+    )
+    
+    parser.add_argument(
+        "-m", "--max-reads",
+        type=int,
+        default=0,
+        help="Maximum number of reads to process (0 for all reads)"
+    )
+    
+    parser.add_argument(
+        "-c", "--chunk-size",
+        type=int,
+        default=50,
+        help="Number of reads to process in each thread chunk"
+    )
+    
+    parser.add_argument(
+        "-u", "--unaligned-only",
+        action="store_true",
+        help="Process only unaligned reads"
+    )
+    
+    parser.add_argument(
+        "--max-distance",
+        type=int,
+        default=4,
+        help="Maximum Levenshtein distance for primer matching"
+    )
+    
+    parser.add_argument(
+        "-w", "--window-size",
+        type=int,
+        default=30,
+        help="Size of the window to search for primers at read ends"
+    )
+
+    parser.add_argument("--ignore-amplicon-size", 
+        action="store_true", 
+        help="Ignore amplicon size compliance checks"
+        )
+
+    parser.add_argument(
+        "-d", "--downsample",
+        type=float,
+        default=100.0,
+        help="Percentage of reads to randomly sample from the BAM file (0.1-100.0)"
+    )
+    
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Print detailed progress information"
+    )
+
+    parser.add_argument("--check-termini", 
+        action="store_false", 
+        help="Dont check for partial matches at read termini")
+    
+    parser.add_argument("--terminus-length", 
+        type=int, 
+        default=14, 
+        help="Length of terminus to check for partial matches")
+        
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print detailed debug information for single-end primer reads"
+    )
+    
+    return parser.parse_args()
+
+def validate_inputs(args):
+    """Validate input files and parameters."""
+    if not os.path.exists(args.bam):
+        raise FileNotFoundError(f"BAM file not found: {args.bam}")
+    
+    if not os.path.exists(args.primers):
+        raise FileNotFoundError(f"Primer file not found: {args.primers}")
+
+    if args.downsample <= 0 or args.downsample > 100:
+        raise ValueError("Downsampling percentage must be between 0.1 and 100")
+    
+    try:
+        primers_df = pd.read_csv(args.primers, sep="\t")
+        required_columns = ['Name', 'Forward', 'Reverse', 'Size']
+        missing_columns = [col for col in required_columns if col not in primers_df.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns in primer file: {', '.join(missing_columns)}")
+    except Exception as e:
+        raise ValueError(f"Error reading primer file: {str(e)}")
+    
+    if args.max_distance < 0:
+        raise ValueError("Maximum distance must be non-negative")
+    
+    if args.threads < 1:
+        raise ValueError("Number of threads must be positive")
+    
+    if args.chunk_size < 1:
+        raise ValueError("Chunk size must be positive")
+        
+    if args.window_size < 1:
+        raise ValueError("Window size must be positive")
+
+def create_primer_statistics(matched_pairs, primers_df, total_reads):
+    """Create statistics for each primer pair."""
+    if matched_pairs.empty:
+        return pd.DataFrame()
+        
+    # Create a clean copy of the data
+    matched_pairs = matched_pairs.copy()
+    primers_df = primers_df.copy()
+    
+    primer_stats = []
+    
+    for primer_name in primers_df['Name'].unique():
+        # Get all reads where this primer appears
+        primer_matches = matched_pairs[matched_pairs['Start_Primer_Name'] == primer_name]
+        
+        if len(primer_matches) == 0:
+            continue
+            
+        total_appearances = len(primer_matches)
+        stats = {
+            'Primer_Name': primer_name,
+            'Total_Appearances': total_appearances,
+            'Percentage_of_Total_Reads': round((total_appearances / total_reads * 100), 2),
+            'Correct_Orientation_Percentage': round(
+                (primer_matches['Correct_Orientation'].sum() / total_appearances * 100), 2
+            ),
+            'Size_Compliant_Percentage': round(
+                (primer_matches['Size_Compliant'].sum() / total_appearances * 100), 2
+            ),
+            'Correct_Orientation_and_Size_Percentage': round(
+                (((primer_matches['Correct_Orientation'] == True) & 
+                  (primer_matches['Size_Compliant'] == True)).sum() / total_appearances * 100), 2
+            )
+        }
+        
+        primer_stats.append(stats)
+    
+    return pd.DataFrame(primer_stats)
+
+def save_results(results, output_prefix, primers_df):
+    """Save analysis results to files with additional primer combination summaries."""
+    os.makedirs(os.path.dirname(output_prefix) if os.path.dirname(output_prefix) else '.', exist_ok=True)
+    
+    def create_primer_combination_summary(df, total_reads):
+        """Helper function to create summary of primer combinations"""
+        if df.empty:
+            return pd.DataFrame()
+            
+        # Create a clean copy of the data
+        df = df.copy()
+        
+        # Group by start and end primers to count occurrences
+        summary = df.groupby(['Start_Primers', 'End_Primers'], observed=True).size().reset_index()
+        summary.columns = ['Start_Primers', 'End_Primers', 'Occurrence_Count']
+        
+        # Calculate percentage of total reads
+        summary['Percent_of_Total_Reads'] = (summary['Occurrence_Count'] / total_reads * 100).round(2)
+        summary = summary.sort_values('Occurrence_Count', ascending=False)
+        
+        return summary
+    
+    # Get total reads analyzed
+    total_reads = len(results['results'])
+    
+    # Save summary
+    results['summary'].to_csv(f"{output_prefix}_summary.csv", index=False)
+    
+    # Save matched pairs and their summary
+    if not results['matched_pairs'].empty:
+        # Save full matched pairs data with all columns
+        results['matched_pairs'].to_csv(f"{output_prefix}_matched_pairs.csv", index=False)
+        
+        # Create and save matched pairs summary
+        matched_summary = create_primer_combination_summary(results['matched_pairs'], total_reads)
+        if not matched_summary.empty:
+            matched_summary.to_csv(f"{output_prefix}_matched_pairs_summary.csv", index=False)
+        
+        # Generate and save primer statistics
+        primer_stats = create_primer_statistics(
+            results['matched_pairs'],
+            primers_df,
+            total_reads
+        )
+        if not primer_stats.empty:
+            primer_stats.to_csv(f"{output_prefix}_primer_statistics.csv", index=False)
+    
+    # Save mismatched pairs and their summary
+    if not results['mismatched_pairs'].empty:
+        # Save full mismatched pairs data
+        results['mismatched_pairs'].to_csv(f"{output_prefix}_mismatched_pairs.csv", index=False)
+        
+        # Create and save mismatched pairs summary
+        mismatched_summary = create_primer_combination_summary(results['mismatched_pairs'], total_reads)
+        if not mismatched_summary.empty:
+            mismatched_summary.to_csv(f"{output_prefix}_mismatched_pairs_summary.csv", index=False)
+    
+    # Save wrong size pairs and their summary
+    wrong_size_pairs = results['matched_pairs'][
+        (results['matched_pairs']['Correct_Orientation'] == True) & 
+        (results['matched_pairs']['Size_Compliant'] == False)
+    ].copy()
+    
+    if not wrong_size_pairs.empty:
+        # Save full wrong size pairs data
+        wrong_size_pairs.to_csv(f"{output_prefix}_wrong_size_pairs.csv", index=False)
+        
+        # Create and save wrong size pairs summary
+        wrong_size_summary = create_primer_combination_summary(wrong_size_pairs, total_reads)
+        if not wrong_size_summary.empty:
+            wrong_size_summary.to_csv(f"{output_prefix}_wrong_size_pairs_summary.csv", index=False)
+
+
+def main():
+    """
+    Main execution function for URAdime.
+    
+    This function coordinates the entire execution flow of the tool,
+    from argument parsing to result output, handling errors and providing
+    appropriate exit codes.
+    
+    Returns:
+        int: Exit code (0 for success, 1 for failure)
+    """
+    try:
+        # Parse arguments
+        args = parse_arguments()
+        
+        # Validate inputs
+        validate_inputs(args)
+        
+        if args.verbose:
+            print("Starting URAdime analysis...")
+            print(f"Input BAM: {args.bam}")
+            print(f"Input primers: {args.primers}")
+            print(f"Using {args.threads} threads")
+            print(f"Window size: {args.window_size}")
+            print(f"Max distance: {args.max_distance}")  # Added log message
+            print(f"Downsampling to {args.downsample}% of reads")
+        
+        # Process BAM file - pass max_distance from args
+        result_df = bam_to_fasta_parallel(
+            bam_path=args.bam,
+            primer_file=args.primers,
+            window_size=args.window_size,
+            unaligned_only=args.unaligned_only,
+            max_reads=args.max_reads,
+            num_threads=args.threads,
+            chunk_size=args.chunk_size,
+            downsample_percentage=args.downsample,
+            max_distance=args.max_distance  # Pass max_distance from args
+        )
+        
+        if result_df.empty:
+            print("No results generated. Check input files and parameters.")
+            return 1
+        
+        if args.verbose:
+            print(f"\nProcessed {len(result_df)} reads successfully")
+        
+        # Load primers for analysis
+        primers_df, _ = load_primers(args.primers)
+        
+        # Create analysis summary
+        summary_df, matched_pairs, mismatched_pairs = create_analysis_summary(
+            result_df, 
+            primers_df,
+            ignore_amplicon_size=args.ignore_amplicon_size
+        )
+
+        # Prepare results dictionary
+        results = {
+            'results': result_df,
+            'summary': summary_df,
+            'matched_pairs': matched_pairs,
+            'mismatched_pairs': mismatched_pairs
+        }
+        
+        # Save results
+        save_results(results, args.output, primers_df)
+        
+        # Print summary to console
+        print("\nAnalysis Summary:")
+        print("=" * 80)
+        print(summary_df.to_string(index=False))
+        
+        if args.verbose:
+            print(f"\nResults saved with prefix: {args.output}")
+        
+        return 0
+        
+    except Exception as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())
