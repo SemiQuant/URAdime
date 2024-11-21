@@ -32,6 +32,7 @@ uradime \
     --ignore-amplicon-size \          # Usefull if short read sequecing like Illumina where the paired read length is not the size of the actual amplicon
     --check-termini \                 # Turn off check for partial matches at read termini
     --terminus-length 14 \            # Length of terminus to check for partial matches
+    --overlap-threshold 0.8 \         # Minimum fraction of overlap required to consider primers as overlapping (0.0-1.0), this is added for hissPCR support
     --downsample 5.0 \                # Percentage of reads to randomly sample from the BAM file (0.1-100.0)
     -v                                # Verbose output
 ```

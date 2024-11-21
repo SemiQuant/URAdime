@@ -139,48 +139,124 @@ def check_terminal_match(sequence, primer, terminus_length=15, max_distance=2):
     
     return found_match, best_match_length
 
-def find_primers_in_region(sequence, primers_df, window_size=20, max_distance=2, check_termini=True, terminus_length=15):
-    """Search for primer sequences within a given region of DNA sequence."""
+def find_primers_in_region(sequence, primers_df, window_size=20, max_distance=2, check_termini=True, terminus_length=15, overlap_threshold=0.8):
+    """
+    Search for primer sequences within a given region of DNA sequence.
+    Handles overlapping primers by selecting the best match based on binding and orientation.
+    
+    Args:
+        sequence: DNA sequence to search
+        primers_df: DataFrame containing primer information
+        window_size: Size of window to search
+        max_distance: Maximum allowed Levenshtein distance
+        check_termini: Whether to check for partial matches at termini
+        terminus_length: Length of terminus to check
+        overlap_threshold: Minimum overlap fraction to consider primers as overlapping
+        
+    Returns:
+        dict: Dictionary containing full matches and terminal matches
+    """
     full_matches = []
     terminal_matches = []
     
-    # Create a mask to track which positions in the sequence have been matched
-    matched_positions = set()
+    # Store detailed match information for filtering overlaps
+    match_details = []
     
+    # First pass: find all possible matches with their positions
     for _, primer in primers_df.iterrows():
         forward_primer = primer['Forward']
         reverse_primer = primer['Reverse']
         
-        # Check for full matches first
-        forward_match = is_match(sequence[:window_size + len(forward_primer)], forward_primer, max_distance)
-        reverse_match = is_match(sequence[:window_size + len(reverse_primer)], reverse_primer, max_distance)
-        forward_rc_match = is_match(sequence[:window_size + len(forward_primer)], 
-                                  str(Seq(forward_primer).reverse_complement()), max_distance)
-        reverse_rc_match = is_match(sequence[:window_size + len(reverse_primer)], 
-                                  str(Seq(reverse_primer).reverse_complement()), max_distance)
+        # Check all possible orientations
+        primer_checks = [
+            (forward_primer, 'Forward'),
+            (reverse_primer, 'Reverse'),
+            (str(Seq(forward_primer).reverse_complement()), 'ForwardComp'),
+            (str(Seq(reverse_primer).reverse_complement()), 'ReverseComp')
+        ]
         
-        # Add full matches
-        if forward_match:
-            full_matches.append(f"{primer['Name']}_Forward")
-        if reverse_match:
-            full_matches.append(f"{primer['Name']}_Reverse")
-        if forward_rc_match:
-            full_matches.append(f"{primer['Name']}_ForwardComp")
-        if reverse_rc_match:
-            full_matches.append(f"{primer['Name']}_ReverseComp")
+        for primer_seq, orientation in primer_checks:
+            # Search for matches within the window
+            for i in range(min(window_size, len(sequence) - len(primer_seq) + 1)):
+                window = sequence[i:i+len(primer_seq)]
+                if len(window) == len(primer_seq):
+                    # Calculate mismatches considering N's
+                    mismatches = sum(1 for w, p in zip(window, primer_seq) 
+                                   if w != p and w != 'N' and p != 'N')
+                    
+                    if mismatches <= max_distance:
+                        match_details.append({
+                            'name': f"{primer['Name']}_{orientation}",
+                            'start': i,
+                            'end': i + len(primer_seq),
+                            'length': len(primer_seq),
+                            'mismatches': mismatches,
+                            'sequence': primer_seq,
+                            'is_correct_orientation': orientation in ['Forward', 'ReverseComp']
+                        })
+    
+    # Filter overlapping matches
+    if match_details:
+        # Sort by start position and then by length (longer primers first)
+        match_details.sort(key=lambda x: (x['start'], -x['length']))
         
-        # Check for terminal matches if no full match was found
-        if check_termini and not any([forward_match, reverse_match, forward_rc_match, reverse_rc_match]):
+        filtered_matches = []
+        i = 0
+        while i < len(match_details):
+            current_match = match_details[i]
+            overlapping_group = [current_match]
+            
+            # Find all matches that overlap with current match
+            j = i + 1
+            while j < len(match_details):
+                next_match = match_details[j]
+                
+                # Calculate overlap
+                overlap_start = max(current_match['start'], next_match['start'])
+                overlap_end = min(current_match['end'], next_match['end'])
+                overlap_length = max(0, overlap_end - overlap_start)
+                
+                # Calculate overlap fraction relative to shorter match
+                min_length = min(current_match['length'], next_match['length'])
+                overlap_fraction = overlap_length / min_length
+                
+                if overlap_fraction >= overlap_threshold:
+                    overlapping_group.append(next_match)
+                    j += 1
+                else:
+                    break
+                    
+            # Choose the best match from overlapping group
+            if len(overlapping_group) > 1:
+                # Score each match in the group
+                best_match = max(overlapping_group, key=lambda x: (
+                    -x['mismatches'],  # Fewer mismatches is better
+                    x['is_correct_orientation'],  # Correct orientation is better
+                    x['length'],  # Longer length is better
+                    -x['start']  # Earlier start position is better
+                ))
+                filtered_matches.append(best_match)
+            else:
+                filtered_matches.append(current_match)
+            
+            i = j
+        
+        # Add filtered matches to results
+        full_matches = [match['name'] for match in filtered_matches]
+    
+    # Handle terminal matches if needed and no full matches were found
+    if check_termini and not full_matches:
+        for _, primer in primers_df.iterrows():
             # Check forward primer terminal matches
             fwd_match_found, fwd_match_length = check_terminal_match(
-                sequence, forward_primer, terminus_length, max_distance
+                sequence, primer['Forward'], terminus_length, max_distance
             )
             if fwd_match_found:
                 terminal_matches.append(f"{primer['Name']}_Forward_Terminal_{fwd_match_length}bp")
             
             # Check reverse primer terminal matches
             rev_match_found, rev_match_length = check_terminal_match(
-                sequence, reverse_primer, terminus_length, max_distance
+                sequence, primer['Reverse'], terminus_length, max_distance
             )
             if rev_match_found:
                 terminal_matches.append(f"{primer['Name']}_Reverse_Terminal_{rev_match_length}bp")
@@ -190,25 +266,73 @@ def find_primers_in_region(sequence, primers_df, window_size=20, max_distance=2,
         'terminal_matches': list(set(terminal_matches))
     }
 
-def process_read_chunk(chunk: List[Dict], primers_df: pd.DataFrame, 
-                      window_size: int, unaligned_only: bool,
-                      max_distance: int = 2, check_termini: bool = True,  
-                      terminus_length: int = 10) -> List[Dict]:
+def bam_to_fasta_parallel(bam_path: str, primer_file: str, window_size: int = 20, 
+                         unaligned_only: bool = False, max_reads: int = 200, 
+                         num_threads: int = 4, chunk_size: int = 50, 
+                         downsample_percentage: float = 100.0,
+                         max_distance: int = 2,
+                         overlap_threshold: float = 0.8) -> pd.DataFrame:
     """
-    Process a chunk of sequencing reads in parallel to identify primers.
-    Handles both paired-end (concatenated) and single-end reads.
+    Process BAM file and find primers in reads using multiple threads.
     
     Args:
-        chunk: List of reads (either Dict for paired-end or pysam.AlignedSegment for single-end)
-        primers_df: DataFrame containing primer information
-        window_size: Size of window to search for primers
-        unaligned_only: Whether to process only unaligned reads
-        max_distance: Maximum allowed Levenshtein distance
-        check_termini: Whether to check for partial matches at read termini
-        terminus_length: Length of terminus to check for partial matches
+        ... (existing args)
+        overlap_threshold: Minimum fraction of overlap required to consider primers as overlapping (0.0-1.0)
+    """
+    # Load primers
+    primers_df, _ = load_primers(primer_file)
+    
+    print(f"Loading BAM file: {bam_path}")
+    
+    # Perform downsampling
+    all_reads = downsample_reads(bam_path, downsample_percentage, max_reads)
+    
+    if not all_reads:
+        print("No reads selected after downsampling")
+        return pd.DataFrame()
+    
+    print(f"Processing {len(all_reads)} reads with {num_threads} threads...")
+    
+    chunks = [all_reads[i:i + chunk_size] for i in range(0, len(all_reads), chunk_size)]
+    
+    all_data = []
+    
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        future_to_chunk = {
+            executor.submit(
+                process_read_chunk, 
+                chunk, 
+                primers_df, 
+                window_size, 
+                unaligned_only,
+                max_distance,
+                overlap_threshold=overlap_threshold  # Pass the parameter
+            ): chunk for chunk in chunks
+        }
         
-    Returns:
-        List[Dict]: Analysis results for each read
+        for future in tqdm(as_completed(future_to_chunk), total=len(chunks), desc="Processing chunks"):
+            try:
+                chunk_data = future.result()
+                all_data.extend(chunk_data)
+            except Exception as e:
+                print(f"Error processing chunk: {e}")
+    
+    if not all_data:
+        print("No data was processed successfully")
+        return pd.DataFrame()
+        
+    return pd.DataFrame(all_data)
+
+def process_read_chunk(chunk: List[Dict], primers_df: pd.DataFrame, 
+                      window_size: int, unaligned_only: bool,
+                      max_distance: int = 2, overlap_threshold: float = 0.8,
+                      check_termini: bool = True, terminus_length: int = 10) -> List[Dict]:
+    """
+    Process a chunk of sequencing reads in parallel to identify primers.
+    
+    Args:
+        ... (existing args)
+        overlap_threshold: Minimum fraction of overlap required to consider primers as overlapping
     """
     chunk_data = []
     
@@ -246,15 +370,6 @@ def process_read_chunk(chunk: List[Dict], primers_df: pd.DataFrame,
         end_start_pos = max(0, read_length - effective_window)
         end_region = read_sequence[end_start_pos:]
         
-        # Handle potential 'N' separator in paired reads
-        if isinstance(read, dict) and 'N' * 10 in read_sequence:
-            # Split at the N separator for paired reads
-            parts = read_sequence.split('N' * 10)
-            if len(parts) == 2:
-                # Get start region from first read and end region from second read
-                start_region = parts[0][:min(effective_window, len(parts[0]))]
-                end_region = parts[1][-min(effective_window, len(parts[1])):]
-        
         # Process start primers
         start_results = find_primers_in_region(
             start_region, 
@@ -262,7 +377,8 @@ def process_read_chunk(chunk: List[Dict], primers_df: pd.DataFrame,
             window_size=window_size,
             max_distance=max_distance,
             check_termini=check_termini,
-            terminus_length=terminus_length
+            terminus_length=terminus_length,
+            overlap_threshold=overlap_threshold  # Pass the parameter
         )
         
         # Process end primers with reversed sequence
@@ -272,10 +388,11 @@ def process_read_chunk(chunk: List[Dict], primers_df: pd.DataFrame,
             window_size=window_size,
             max_distance=max_distance,
             check_termini=check_termini,
-            terminus_length=terminus_length
+            terminus_length=terminus_length,
+            overlap_threshold=overlap_threshold  # Pass the parameter
         )
         
-        # Store results
+        # Store results (rest of function remains the same)
         chunk_data.append({
             'Read_Name': read_name,
             'Start_Primers': ', '.join(start_results['full_matches']) if start_results['full_matches'] else 'None',
@@ -285,7 +402,7 @@ def process_read_chunk(chunk: List[Dict], primers_df: pd.DataFrame,
             'Read_Length': read_length,
             'Start_Region_Length': len(start_region),
             'End_Region_Length': len(end_region),
-            'Is_Paired': isinstance(read, dict),  # Track if this was a paired read
+            'Is_Paired': isinstance(read, dict),
             'Is_Unmapped': is_unmapped
         })
     
@@ -696,78 +813,6 @@ def downsample_reads(bam_path: str, percentage: float, max_reads: int = 0) -> Li
             print(f"Error during downsampling: {e}")
             return []
 
-def bam_to_fasta_parallel(bam_path: str, primer_file: str, window_size: int = 20, 
-                         unaligned_only: bool = False, max_reads: int = 200, 
-                         num_threads: int = 4, chunk_size: int = 50, 
-                         downsample_percentage: float = 100.0,
-                         max_distance: int = 2) -> pd.DataFrame:
-    """
-    Process BAM file and find primers in reads using multiple threads.
-    
-    This function coordinates the parallel processing of BAM reads,
-    managing thread pools and combining results from multiple workers.
-    
-    Args:
-        bam_path: Path to input BAM file
-        primer_file: Path to primer information file
-        window_size: Size of window to search for primers
-        unaligned_only: Whether to process only unaligned reads
-        max_reads: Maximum number of reads to process
-        num_threads: Number of parallel processing threads
-        chunk_size: Number of reads per processing chunk
-        downsample_percentage: Percentage of reads to randomly sample
-        max_distance: Maximum allowed Levenshtein distance for primer matching
-        
-    Returns:
-        pd.DataFrame: DataFrame containing results of primer analysis for all processed reads
-    """
-    # Validate input files
-    if not os.path.exists(bam_path):
-        raise FileNotFoundError(f"BAM file not found: {bam_path}")
-    
-    # Load primers
-    primers_df, _ = load_primers(primer_file)
-    
-    print(f"Loading BAM file: {bam_path}")
-    
-    # Perform downsampling
-    all_reads = downsample_reads(bam_path, downsample_percentage, max_reads)
-    
-    if not all_reads:
-        print("No reads selected after downsampling")
-        return pd.DataFrame()
-    
-    print(f"Processing {len(all_reads)} reads with {num_threads} threads...")
-    
-    chunks = [all_reads[i:i + chunk_size] for i in range(0, len(all_reads), chunk_size)]
-    
-    all_data = []
-    
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        future_to_chunk = {
-            executor.submit(
-                process_read_chunk, 
-                chunk, 
-                primers_df, 
-                window_size, 
-                unaligned_only,
-                max_distance  # Pass max_distance to process_read_chunk
-            ): chunk for chunk in chunks
-        }
-        
-        for future in tqdm(as_completed(future_to_chunk), total=len(chunks), desc="Processing chunks"):
-            try:
-                chunk_data = future.result()
-                all_data.extend(chunk_data)
-            except Exception as e:
-                print(f"Error processing chunk: {e}")
-    
-    if not all_data:
-        print("No data was processed successfully")
-        return pd.DataFrame()
-        
-    return pd.DataFrame(all_data)
-
 def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int = 20,
                              num_threads: int = 4, max_reads: int = 200, chunk_size: int = 50,
                              ignore_amplicon_size: bool = False,
@@ -915,7 +960,15 @@ def parse_arguments():
     parser.add_argument("--terminus-length", 
         type=int, 
         default=14, 
-        help="Length of terminus to check for partial matches")
+        help="Length of terminus to check for partial matches"
+        )
+
+    parser.add_argument(
+        "--overlap-threshold",
+        type=float,
+        default=0.8,
+        help="Minimum fraction of overlap required to consider primers as overlapping (0.0-1.0)"
+    )
         
     parser.add_argument(
         "--debug",
@@ -956,6 +1009,9 @@ def validate_inputs(args):
         
     if args.window_size < 1:
         raise ValueError("Window size must be positive")
+    
+    if args.overlap_threshold < 0 or args.overlap_threshold > 1:
+        raise ValueError("Overlap threshold must be between 0.0 and 1.0")
 
 def create_primer_statistics(matched_pairs, primers_df, total_reads):
     """Create statistics for each primer pair."""
@@ -1116,10 +1172,11 @@ def main():
             print(f"Input primers: {args.primers}")
             print(f"Using {args.threads} threads")
             print(f"Window size: {args.window_size}")
-            print(f"Max distance: {args.max_distance}")  # Added log message
+            print(f"Max distance: {args.max_distance}")
+            print(f"Overlap threshold: {args.overlap_threshold}")
             print(f"Downsampling to {args.downsample}% of reads")
         
-        # Process BAM file - pass max_distance from args
+        # Process BAM file
         result_df = bam_to_fasta_parallel(
             bam_path=args.bam,
             primer_file=args.primers,
@@ -1129,7 +1186,8 @@ def main():
             num_threads=args.threads,
             chunk_size=args.chunk_size,
             downsample_percentage=args.downsample,
-            max_distance=args.max_distance  # Pass max_distance from args
+            max_distance=args.max_distance,
+            overlap_threshold=args.overlap_threshold  # Add new parameter
         )
         
         if result_df.empty:
