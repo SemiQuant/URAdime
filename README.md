@@ -28,6 +28,7 @@ uradime \
     -c 100 \                          # Chunk size for parallel processing
     -u \                              # Process only unaligned reads
     --max-distance 2 \                # Maximum Levenshtein distance for matching
+    --unaligned-only \                # only check the unaligned reads  
     --window-size 20 \                # Allowed padding on the 5' ends of the reads, sometime needs to be very big due to universal tails etc. setting this parameter too large can cause unexpected results
     --ignore-amplicon-size \          # Usefull if short read sequecing like Illumina where the paired read length is not the size of the actual amplicon
     --check-termini \                 # Turn off check for partial matches at read termini
