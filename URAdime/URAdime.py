@@ -968,7 +968,7 @@ def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int
     print(f"Using size tolerance of {size_tolerance:.1%}")
     
     try:
-        # Get all results at once instead of processing in chunks
+        # Get results from parallel processing
         result_df = bam_to_fasta_parallel(
             bam_path=bam_path,
             primer_file=primer_file,
@@ -1000,9 +1000,59 @@ def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int
         
         primers_df, _ = load_primers(primer_file)
         
-        # Process all data at once
-        summary_df, matched_pairs, mismatched_pairs = create_analysis_summary(
-            result_df.copy(),  # Use copy to prevent modifications
+        # Process matched pairs identification first
+        result_df['Start_Primer_Name'] = result_df['Start_Primers'].apply(get_base_primer_name)
+        result_df['End_Primer_Name'] = result_df['End_Primers'].apply(get_base_primer_name)
+        
+        # Identify matched pairs
+        matched_pairs_mask = (
+            (result_df['Start_Primers'] != 'None') & 
+            (result_df['End_Primers'] != 'None') &
+            (result_df['Start_Primer_Count'] == 1) &
+            (result_df['End_Primer_Count'] == 1) &
+            (result_df['Start_Primer_Name'] == result_df['End_Primer_Name'])
+        )
+        
+        matched_pairs = result_df[matched_pairs_mask].copy()
+        
+        # Calculate orientation and size compliance for matched pairs
+        if not matched_pairs.empty:
+            matched_pairs['Correct_Orientation'] = matched_pairs.apply(
+                lambda row: is_correct_orientation(row['Start_Primers'], row['End_Primers']), 
+                axis=1
+            )
+            
+            if not ignore_amplicon_size:
+                matched_pairs['Size_Compliant'] = matched_pairs.apply(
+                    lambda row: is_size_compliant(row, primers_df, size_tolerance),
+                    axis=1
+                )
+            else:
+                matched_pairs['Size_Compliant'] = True
+        
+        # Identify mismatched pairs
+        mismatched_pairs_mask = (
+            (result_df['Start_Primers'] != 'None') & 
+            (result_df['End_Primers'] != 'None') &
+            (result_df['Start_Primer_Count'] == 1) &
+            (result_df['End_Primer_Count'] == 1) &
+            (result_df['Start_Primer_Name'] != result_df['End_Primer_Name'])
+        )
+        
+        mismatched_pairs = result_df[mismatched_pairs_mask].copy()
+        
+        # Add orientation and size compliance columns to result_df
+        result_df['Correct_Orientation'] = False
+        result_df['Size_Compliant'] = False
+        
+        if not matched_pairs.empty:
+            # Update values for matched pairs in the main result_df
+            result_df.loc[matched_pairs_mask, 'Correct_Orientation'] = matched_pairs['Correct_Orientation']
+            result_df.loc[matched_pairs_mask, 'Size_Compliant'] = matched_pairs['Size_Compliant']
+        
+        # Create summary with the complete dataset
+        summary_df, _, _ = create_analysis_summary(
+            result_df,
             primers_df,
             ignore_amplicon_size=ignore_amplicon_size,
             debug=debug,
@@ -1013,10 +1063,10 @@ def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int
         print(summary_df.to_string(index=False))
         
         return {
-            'results': result_df.copy(),
+            'results': result_df,
             'summary': summary_df,
-            'matched_pairs': matched_pairs.copy() if not matched_pairs.empty else pd.DataFrame(),
-            'mismatched_pairs': mismatched_pairs.copy() if not mismatched_pairs.empty else pd.DataFrame()
+            'matched_pairs': matched_pairs if not matched_pairs.empty else pd.DataFrame(),
+            'mismatched_pairs': mismatched_pairs if not mismatched_pairs.empty else pd.DataFrame()
         }
         
     except Exception as e:
