@@ -19,6 +19,15 @@ import os
 import sys
 import random
 
+def print_banner():
+    """Print a stylized banner."""
+    banner = """
+══════════════════════════════════════════════════════════════════════════════
+                           URAdime v{:^7}                
+                Universal Read Analysis of DIMErs    
+══════════════════════════════════════════════════════════════════════════════""".format("0.1.5")
+    print(banner)
+
 def load_primers(primer_file):
     """
     Load and prepare primers from a tab-separated file.
@@ -619,7 +628,7 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
         ])
     
     summary_df = pd.DataFrame(summary_data)
-    summary_df['Percentage'] = summary_df['Percentage'].round(2)
+    summary_df['Percentage'] = summary_df['Percentage'].round(1)
     
     return summary_df, matched_pairs, mismatched_pairs
 
@@ -847,6 +856,7 @@ def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int
     """
     Complete analysis pipeline using parallel processing.
     """
+
     print(f"Starting analysis with {num_threads} threads...")
     
     try:
@@ -1172,6 +1182,33 @@ def save_results(results, output_prefix, primers_df):
         if not wrong_size_summary.empty:
             wrong_size_summary.to_csv(f"{output_prefix}_wrong_size_pairs_summary.csv", index=False)
 
+def format_summary_table(df):
+    """Format summary DataFrame as a pretty ASCII table."""
+    # Get maximum lengths for each column
+    cat_width = max(len(str(x)) for x in df['Category']) + 2
+    count_width = max(len(str(x)) for x in df['Count']) + 2
+    pct_width = max(len(f"{x:.1f}" if isinstance(x, float) else str(x)) for x in df['Percentage']) + 2
+
+    # Create header
+    header = (f"{'Category':<{cat_width}} {'Count':>{count_width}} {'Percentage':>{pct_width}}")
+    separator = "=" * (cat_width + count_width + pct_width + 6)
+    
+    # Format each row
+    rows = []
+    for _, row in df.iterrows():
+        rows.append(
+            f"{str(row['Category']):<{cat_width}} "
+            f"{str(row['Count']):>{count_width}} "
+            f"{f'{float(row['Percentage']):.1f}':>{pct_width}}"
+        )
+    
+    # Combine all parts
+    table = f"\n{separator}\n{header}\n{separator}\n"
+    table += "\n".join(rows)
+    table += f"\n{separator}\n"
+    
+    return table
+
 def main():
     """
     Main execution function for URAdime.
@@ -1183,6 +1220,8 @@ def main():
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
+    print_banner()
+    
     try:
         # Parse arguments
         args = parse_arguments()
@@ -1244,8 +1283,7 @@ def main():
         
         # Print summary to console
         print("\nAnalysis Summary:")
-        print("=" * 80)
-        print(summary_df.to_string(index=False))
+        print(format_summary_table(summary_df))
         
         if args.verbose:
             print(f"\nResults saved with prefix: {args.output}")
