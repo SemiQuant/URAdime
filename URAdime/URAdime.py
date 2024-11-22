@@ -25,7 +25,7 @@ def print_banner():
 ══════════════════════════════════════════════════════════════════════════════
                            URAdime v{:^7}                
                 Universal Read Analysis of DIMErs    
-══════════════════════════════════════════════════════════════════════════════""".format("0.1.5")
+══════════════════════════════════════════════════════════════════════════════""".format("0.1.6")
     print(banner)
 
 def load_primers(primer_file):
@@ -437,7 +437,7 @@ def get_base_primer_name(primer_str):
     return '_'.join(primer_str.split('_')[:-1])
 
 
-def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, debug=False):
+def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, debug=False, size_tolerance=0.10):
     """Create comprehensive summary of primer analysis results."""
     if result_df.empty:
         print("No reads to analyze in the results dataframe")
@@ -472,7 +472,7 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
     result_df['Correct_Orientation'] = False
     result_df['Size_Compliant'] = False
     
-    # Identify categories as before...
+    # Identify categories
     no_matches = result_df[
         (result_df['Start_Primers'] == 'None') & 
         (result_df['End_Primers'] == 'None') &
@@ -504,7 +504,7 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
             start_name = get_base_primer_name(row['Start_Terminal_Matches'])
             if start_name:
                 expected_size = primers_df[primers_df['Name'] == start_name]['Size'].iloc[0]
-                tolerance = expected_size * 0.10  # 10% tolerance
+                tolerance = expected_size * size_tolerance
                 
                 read_length = row['Read_Length']
                 is_compliant = abs(read_length - expected_size) <= tolerance
@@ -514,7 +514,6 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
                 else:
                     paired_terminal_incorrect = pd.concat([paired_terminal_incorrect, pd.DataFrame([row])])
     
-    # Rest of the categories remain the same...
     hybrid_matches = result_df[
         ((result_df['Start_Primers'] != 'None') & (result_df['End_Primers'] == 'None') & (result_df['End_Terminal_Matches'] != 'None')) |
         ((result_df['Start_Primers'] == 'None') & (result_df['End_Primers'] != 'None') & (result_df['Start_Terminal_Matches'] != 'None'))
@@ -555,13 +554,13 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
         
         if not ignore_amplicon_size:
             matched_pairs['Size_Compliant'] = matched_pairs.apply(
-                lambda row: is_size_compliant(row, primers_df), 
+                lambda row: is_size_compliant(row, primers_df, size_tolerance), 
                 axis=1
             )
         else:
             matched_pairs['Size_Compliant'] = True
-    
-    # Create summary data with new categories
+
+    # Create summary data
     summary_data = [
         {
             'Category': 'No primers or terminal matches detected',
@@ -643,14 +642,16 @@ def is_correct_orientation(start_primers, end_primers):
     return ((start_orient.startswith('Forward') and end_orient.startswith('Reverse')) or
             (start_orient.startswith('Reverse') and end_orient.startswith('Forward')))
 
-def is_size_compliant(row, primers_df):
-    """Helper function to check if read length matches expected amplicon size"""
+def is_size_compliant(row, primers_df, size_tolerance=0.10):
+    """
+    Helper function to check if read length matches expected amplicon size
+    """
     primer_name = get_base_primer_name(row['Start_Primers'])
     if primer_name is None:
         return False
         
     expected_size = primers_df[primers_df['Name'] == primer_name]['Size'].iloc[0]
-    tolerance = expected_size * 0.10  # 10% tolerance
+    tolerance = expected_size * size_tolerance
     
     return abs(row['Read_Length'] - expected_size) <= tolerance
 
@@ -852,12 +853,29 @@ def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int
                              max_distance: int = 2, 
                              downsample_percentage: float = 100.0,
                              unaligned_only: bool = False,
-                             debug: bool = False):
+                             debug: bool = False,
+                             size_tolerance: float = 0.10,
+                             overlap_threshold: float = 0.8):
     """
     Complete analysis pipeline using parallel processing.
+    
+    Args:
+        bam_path (str): Path to BAM file
+        primer_file (str): Path to primer file
+        window_size (int): Size of window to search for primers
+        num_threads (int): Number of threads to use
+        max_reads (int): Maximum number of reads to process
+        chunk_size (int): Number of reads per chunk
+        ignore_amplicon_size (bool): Whether to ignore amplicon size checks
+        max_distance (int): Maximum Levenshtein distance for matching
+        downsample_percentage (float): Percentage of reads to analyze
+        unaligned_only (bool): Whether to process only unaligned reads
+        debug (bool): Whether to print debug information
+        size_tolerance (float): Size tolerance as fraction of expected size
+        overlap_threshold (float): Minimum fraction of overlap for overlapping primers
     """
-
     print(f"Starting analysis with {num_threads} threads...")
+    print(f"Using size tolerance of {size_tolerance:.1%}")
     
     try:
         # Get all results at once instead of processing in chunks
@@ -870,7 +888,8 @@ def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int
             chunk_size=chunk_size,
             max_distance=max_distance,
             downsample_percentage=downsample_percentage,
-            unaligned_only=unaligned_only
+            unaligned_only=unaligned_only,
+            overlap_threshold=overlap_threshold
         )
         
         if result_df.empty:
@@ -886,7 +905,8 @@ def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int
             result_df.copy(),  # Use copy to prevent modifications
             primers_df,
             ignore_amplicon_size=ignore_amplicon_size,
-            debug=debug
+            debug=debug,
+            size_tolerance=size_tolerance
         )
         
         print("\nAnalysis Summary:")
@@ -1003,6 +1023,13 @@ def parse_arguments():
         default=0.8,
         help="Minimum fraction of overlap required to consider primers as overlapping (0.0-1.0)"
     )
+
+    parser.add_argument(
+        "--size-tolerance",
+        type=float,
+        default=0.10,
+        help="Size tolerance as fraction of expected amplicon size (e.g., 0.10 for 10%%)"
+    )
         
     parser.add_argument(
         "--debug",
@@ -1047,6 +1074,9 @@ def validate_inputs(args):
     if args.overlap_threshold < 0 or args.overlap_threshold > 1:
         raise ValueError("Overlap threshold must be between 0.0 and 1.0")
 
+    if args.size_tolerance <= 0 or args.size_tolerance > 1:
+        raise ValueError("Size tolerance must be between 0 and 1 (e.g., 0.10 for 10%)")
+
 def create_primer_statistics(matched_pairs, primers_df, total_reads):
     """Create statistics for each primer pair."""
     if matched_pairs.empty:
@@ -1055,6 +1085,16 @@ def create_primer_statistics(matched_pairs, primers_df, total_reads):
     # Create a clean copy of the data
     matched_pairs = matched_pairs.copy()
     primers_df = primers_df.copy()
+    
+    # Ensure required columns exist
+    if 'Start_Primer_Name' not in matched_pairs.columns:
+        matched_pairs['Start_Primer_Name'] = matched_pairs['Start_Primers'].apply(get_base_primer_name)
+        
+    if 'Correct_Orientation' not in matched_pairs.columns:
+        matched_pairs['Correct_Orientation'] = False
+        
+    if 'Size_Compliant' not in matched_pairs.columns:
+        matched_pairs['Size_Compliant'] = False
     
     primer_stats = []
     
@@ -1071,10 +1111,10 @@ def create_primer_statistics(matched_pairs, primers_df, total_reads):
             'Total_Appearances': total_appearances,
             'Percentage_of_Total_Reads': round((total_appearances / total_reads * 100), 2),
             'Correct_Orientation_Percentage': round(
-                (primer_matches['Correct_Orientation'].sum() / total_appearances * 100), 2
+                (primer_matches['Correct_Orientation'].astype(int).sum() / total_appearances * 100), 2
             ),
             'Size_Compliant_Percentage': round(
-                (primer_matches['Size_Compliant'].sum() / total_appearances * 100), 2
+                (primer_matches['Size_Compliant'].astype(int).sum() / total_appearances * 100), 2
             ),
             'Correct_Orientation_and_Size_Percentage': round(
                 (((primer_matches['Correct_Orientation'] == True) & 
@@ -1085,7 +1125,7 @@ def create_primer_statistics(matched_pairs, primers_df, total_reads):
         primer_stats.append(stats)
     
     return pd.DataFrame(primer_stats)
-
+    
 def save_results(results, output_prefix, primers_df):
     """Save analysis results to files with additional primer combination summaries."""
     os.makedirs(os.path.dirname(output_prefix) if os.path.dirname(output_prefix) else '.', exist_ok=True)
@@ -1236,11 +1276,12 @@ def main():
             print(f"Using {args.threads} threads")
             print(f"Window size: {args.window_size}")
             print(f"Max distance: {args.max_distance}")
+            print(f"Size tolerance: {args.size_tolerance:.1%}")
             print(f"Overlap threshold: {args.overlap_threshold}")
             print(f"Downsampling to {args.downsample}% of reads")
         
-        # Process BAM file
-        result_df = bam_to_fasta_parallel(
+        # Process BAM file and analyze
+        results = parallel_analysis_pipeline(
             bam_path=args.bam,
             primer_file=args.primers,
             window_size=args.window_size,
@@ -1250,40 +1291,28 @@ def main():
             chunk_size=args.chunk_size,
             downsample_percentage=args.downsample,
             max_distance=args.max_distance,
-            overlap_threshold=args.overlap_threshold  # Add new parameter
+            overlap_threshold=args.overlap_threshold,
+            size_tolerance=args.size_tolerance,
+            ignore_amplicon_size=args.ignore_amplicon_size,
+            debug=args.debug
         )
         
-        if result_df.empty:
+        if results is None:
             print("No results generated. Check input files and parameters.")
             return 1
         
         if args.verbose:
-            print(f"\nProcessed {len(result_df)} reads successfully")
+            print(f"\nProcessed {len(results['results'])} reads successfully")
         
-        # Load primers for analysis
+        # Load primers for saving results
         primers_df, _ = load_primers(args.primers)
-        
-        # Create analysis summary
-        summary_df, matched_pairs, mismatched_pairs = create_analysis_summary(
-            result_df, 
-            primers_df,
-            ignore_amplicon_size=args.ignore_amplicon_size
-        )
-
-        # Prepare results dictionary
-        results = {
-            'results': result_df,
-            'summary': summary_df,
-            'matched_pairs': matched_pairs,
-            'mismatched_pairs': mismatched_pairs
-        }
         
         # Save results
         save_results(results, args.output, primers_df)
         
         # Print summary to console
         print("\nAnalysis Summary:")
-        print(format_summary_table(summary_df))
+        print(format_summary_table(results['summary']))
         
         if args.verbose:
             print(f"\nResults saved with prefix: {args.output}")
@@ -1293,6 +1322,3 @@ def main():
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)
         return 1
-
-if __name__ == "__main__":
-    sys.exit(main())
