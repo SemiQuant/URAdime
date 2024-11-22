@@ -20,12 +20,11 @@ import sys
 import random
 
 def print_banner():
-    """Print a stylized banner."""
     banner = """
 ══════════════════════════════════════════════════════════════════════════════
                            URAdime v{:^7}                
                 Universal Read Analysis of DIMErs    
-══════════════════════════════════════════════════════════════════════════════""".format("0.1.7")
+══════════════════════════════════════════════════════════════════════════════""".format("0.1.8")
     print(banner)
 
 def load_primers(primer_file):
@@ -1059,8 +1058,8 @@ def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int
             size_tolerance=size_tolerance
         )
         
-        print("\nAnalysis Summary:")
-        print(summary_df.to_string(index=False))
+        # print("\nAnalysis Summary:")
+        # print(summary_df.to_string(index=False))
         
         return {
             'results': result_df,
