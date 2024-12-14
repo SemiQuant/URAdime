@@ -24,7 +24,7 @@ def print_banner():
 ══════════════════════════════════════════════════════════════════════════════
                            URAdime v{:^7}                
                 Universal Read Analysis of DIMErs    
-══════════════════════════════════════════════════════════════════════════════""".format("0.1.8")
+════════════════════════════════════════════════════════════════��════════════""".format("0.1.9")
     print(banner)
 
 def load_primers(primer_file):
@@ -1270,8 +1270,7 @@ def create_primer_statistics(matched_pairs, primers_df, total_reads):
             ),
             'Correct_Orientation_and_Size_Percentage': round(
                 (((primer_matches['Correct_Orientation'] == True) & 
-                  (primer_matches['Size_Compliant'] == True)).sum() / total_appearances * 100), 2
-            )
+                  (primer_matches['Size_Compliant'] == True)).sum() / total_appearances * 100), 2)
         }
         
         primer_stats.append(stats)
@@ -1391,7 +1390,7 @@ def format_summary_table(df):
         rows.append(
             f"{str(row['Category']):<{cat_width}} "
             f"{str(row['Count']):>{count_width}} "
-            f"{f'{float(row['Percentage']):.1f}':>{pct_width}}"
+            f"{float(row['Percentage']):.1f:>{pct_width}}"
         )
     
     # Combine all parts
