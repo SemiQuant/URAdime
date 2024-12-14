@@ -27,12 +27,8 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install flake8 pytest
-        pip install pandas --no-cache-dir
-        pip install pysam
-        pip install biopython
-        pip install python-Levenshtein
-        pip install tqdm
-        pip install numpy
+        pip install pandas pysam --no-cache-dir
+        pip install -e .  # Install the package in development mode
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip list  # List installed packages for debugging
     - name: Lint with flake8
@@ -44,5 +40,6 @@ jobs:
     - name: Test with pytest
       run: |
         python -c "import pandas; print(pandas.__version__)"  # Verify pandas installation
+        python -c "import pysam; print(pysam.__version__)"   # Verify pysam installation
         pytest tests/
         
