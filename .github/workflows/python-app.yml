@@ -28,6 +28,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install flake8 pytest
         pip install pandas --no-cache-dir
+        pip install pysam
+        pip install biopython
+        pip install python-Levenshtein
+        pip install tqdm
+        pip install numpy
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip list  # List installed packages for debugging
     - name: Lint with flake8
