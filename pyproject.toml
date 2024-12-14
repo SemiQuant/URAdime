@@ -34,6 +34,10 @@ dependencies = [
 [project.scripts]
 uradime = "URAdime.URAdime:main"
 
+[project.optional-dependencies]
+test = ["pytest"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+addopts = "-v"
