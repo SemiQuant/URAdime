@@ -24,7 +24,7 @@ def print_banner():
 ══════════════════════════════════════════════════════════════════════════════
                            URAdime v{:^7}                
                 Universal Read Analysis of DIMErs    
-════════════════════════════════════════════════════════════════��════════════""".format("0.1.9")
+════════════════════════════════════════════════════════════════════════════""".format("0.1.9")
     print(banner)
 
 def load_primers(primer_file):
@@ -1387,10 +1387,11 @@ def format_summary_table(df):
     # Format each row
     rows = []
     for _, row in df.iterrows():
+        formatted_percentage = f"{float(row['Percentage']):.1f}"
         rows.append(
             f"{str(row['Category']):<{cat_width}} "
             f"{str(row['Count']):>{count_width}} "
-            f"{float(row['Percentage']):.1f:>{pct_width}}"
+            f"{formatted_percentage:>{pct_width}}"
         )
     
     # Combine all parts
