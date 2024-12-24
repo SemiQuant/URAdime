@@ -108,10 +108,10 @@ def check_terminal_match(sequence, primer, terminus_length=15, max_distance=2):
         max_distance (int): Maximum allowed Levenshtein distance
     
     Returns:
-        tuple: (bool, int, str) - (whether match found, length of longest match found, orientation)
+        tuple: (bool, int) - (whether match found, length of longest match found)
     """
     if not sequence or not primer:
-        return False, 0, None
+        return False, 0
         
     # Convert sequences to uppercase
     sequence = str(sequence).upper()
@@ -121,27 +121,25 @@ def check_terminal_match(sequence, primer, terminus_length=15, max_distance=2):
     primer_rc = str(Seq(primer).reverse_complement())
     best_match_length = 0
     found_match = False
-    best_orientation = None
     
     # Adjust terminus length if sequences are shorter
     effective_terminus_length = min(terminus_length, len(sequence), len(primer))
     max_check_length = min(len(sequence), len(primer))
     
-    # For forward primer:
-    # 1. Start of sequence vs 3' end of forward primer (Forward)
-    # 2. End of sequence vs 3' end of RC forward primer (ForwardComp)
-    # For reverse primer:
-    # 3. Start of sequence vs 3' end of RC reverse primer (ReverseComp)
-    # 4. End of sequence vs 3' end of reverse primer (Reverse)
+    # Check all possible combinations:
+    # 1. Start of sequence vs start of primer
+    # 2. Start of sequence vs RC of end of primer
+    # 3. End of sequence vs RC of start of primer
+    # 4. End of sequence vs end of primer
     
     combinations = [
-        (sequence[:max_check_length], primer[-max_check_length:], "Forward"),  # Start vs 3' end of forward
-        (sequence[-max_check_length:], primer_rc[-max_check_length:], "ForwardComp"),  # End vs 3' end of RC forward
-        (sequence[:max_check_length], primer_rc[-max_check_length:], "ReverseComp"),  # Start vs 3' end of RC reverse
-        (sequence[-max_check_length:], primer[-max_check_length:], "Reverse")  # End vs 3' end of reverse
+        (sequence[:max_check_length], primer),  # Start vs Start
+        (sequence[:max_check_length], primer_rc[::-1]),  # Start vs RC End
+        (sequence[-max_check_length:], primer_rc),  # End vs RC Start
+        (sequence[-max_check_length:], primer[::-1])  # End vs End
     ]
     
-    for seq, target, orientation in combinations:
+    for seq, target in combinations:
         # Try progressively larger windows starting from terminus_length
         for window_size in range(effective_terminus_length, len(seq) + 1):
             # Check both start and end of sequence
@@ -157,14 +155,12 @@ def check_terminal_match(sequence, primer, terminus_length=15, max_distance=2):
             
             if mismatches <= max_distance:
                 found_match = True
-                if window_size > best_match_length:
-                    best_match_length = window_size
-                    best_orientation = orientation
+                best_match_length = max(best_match_length, window_size)
             else:
                 # If we find a mismatch, no need to try larger windows
                 break
     
-    return found_match, best_match_length, best_orientation
+    return found_match, best_match_length
 
 def find_primers_in_region(sequence, primers_df, window_size=20, max_distance=2, check_termini=True, terminus_length=15, overlap_threshold=0.8):
     """
@@ -275,18 +271,18 @@ def find_primers_in_region(sequence, primers_df, window_size=20, max_distance=2,
     if check_termini:
         for _, primer in primers_df.iterrows():
             # Check forward primer terminal matches
-            fwd_match_found, fwd_match_length, fwd_orientation = check_terminal_match(
+            fwd_match_found, fwd_match_length = check_terminal_match(
                 sequence, primer['Forward'], terminus_length, max_distance
             )
             if fwd_match_found:
-                terminal_matches.append(f"{primer['Name']}_{fwd_orientation}_Terminal_{fwd_match_length}bp")
+                terminal_matches.append(f"{primer['Name']}_Forward_Terminal_{fwd_match_length}bp")
             
             # Check reverse primer terminal matches
-            rev_match_found, rev_match_length, rev_orientation = check_terminal_match(
+            rev_match_found, rev_match_length = check_terminal_match(
                 sequence, primer['Reverse'], terminus_length, max_distance
             )
             if rev_match_found:
-                terminal_matches.append(f"{primer['Name']}_{rev_orientation}_Terminal_{rev_match_length}bp")
+                terminal_matches.append(f"{primer['Name']}_Reverse_Terminal_{rev_match_length}bp")
     
     return {
         'full_matches': list(set(full_matches)),
@@ -688,6 +684,52 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
         
     total_reads = len(result_df)
     
+    # Helper functions
+    def count_primers(primer_str):
+        """Count number of primers in a comma-separated string."""
+        if primer_str == 'None' or pd.isna(primer_str):
+            return 0
+        return len([p for p in primer_str.split(',') if p.strip()])
+
+    def count_terminal_matches(match_str):
+        """Count number of terminal matches in a comma-separated string."""
+        if match_str == 'None' or pd.isna(match_str):
+            return 0
+        return len([m for m in match_str.split(',') if m.strip()])
+
+    # Initialize result DataFrame with all required columns
+    result_df = result_df.copy()
+    
+    # Ensure all required columns exist with proper initialization
+    required_columns = {
+        'Start_Primers': 'None',
+        'End_Primers': 'None',
+        'Start_Terminal_Matches': 'None',
+        'End_Terminal_Matches': 'None'
+    }
+    
+    for col, default_value in required_columns.items():
+        if col not in result_df.columns:
+            result_df[col] = default_value
+        else:
+            result_df[col] = result_df[col].fillna(default_value)
+
+    # Calculate derived columns for all reads
+    result_df['Start_Primer_Count'] = result_df['Start_Primers'].apply(count_primers)
+    result_df['End_Primer_Count'] = result_df['End_Primers'].apply(count_primers)
+    result_df['Start_Terminal_Count'] = result_df['Start_Terminal_Matches'].apply(count_terminal_matches)
+    result_df['End_Terminal_Count'] = result_df['End_Terminal_Matches'].apply(count_terminal_matches)
+    result_df['Start_Primer_Name'] = result_df['Start_Primers'].apply(get_base_primer_name)
+    result_df['End_Primer_Name'] = result_df['End_Primers'].apply(get_base_primer_name)
+
+    # Process categories
+    no_matches = result_df[
+        (result_df['Start_Primers'] == 'None') & 
+        (result_df['End_Primers'] == 'None') &
+        (result_df['Start_Terminal_Matches'] == 'None') &
+        (result_df['End_Terminal_Matches'] == 'None')
+    ]
+
     # Initialize all category DataFrames as empty
     correct_orient_right_size = pd.DataFrame()
     correct_orient_wrong_size = pd.DataFrame()
@@ -700,76 +742,41 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
     single_end_only = pd.DataFrame()
     multi_primer_pairs = pd.DataFrame()
     mismatched_pairs = pd.DataFrame()
-    no_matches = pd.DataFrame()
 
-    # Process no matches first
-    no_matches = result_df[
-        (result_df['Start_Primers'] == 'None') & 
-        (result_df['End_Primers'] == 'None') &
-        (result_df['Start_Terminal_Matches'] == 'None') &
-        (result_df['End_Terminal_Matches'] == 'None')
-    ]
-
-    # Process paired terminal matches
-    paired_terminal_mask = (
-        (result_df['Start_Primers'] == 'None') & 
-        (result_df['End_Primers'] == 'None') &
-        (result_df['Start_Terminal_Matches'] != 'None') & 
-        (result_df['End_Terminal_Matches'] != 'None')
+    # Only process matched pairs if we have any potential matches
+    matched_pairs_mask = (
+        (result_df['Start_Primers'] != 'None') & 
+        (result_df['End_Primers'] != 'None') &
+        (result_df['Start_Primer_Count'] == 1) &
+        (result_df['End_Primer_Count'] == 1) &
+        (result_df['Start_Primer_Name'] == result_df['End_Primer_Name'])
     )
     
-    if paired_terminal_mask.any():
-        paired_terminal = result_df[paired_terminal_mask].copy()
-        for _, row in paired_terminal.iterrows():
-            start_primer = get_base_primer_name(row['Start_Terminal_Matches'])
-            end_primer = get_base_primer_name(row['End_Terminal_Matches'])
+    if matched_pairs_mask.any():
+        matched_pairs = result_df[matched_pairs_mask].copy()
+        
+        # Calculate orientation
+        matched_pairs['Correct_Orientation'] = matched_pairs.apply(
+            lambda row: is_correct_orientation(row['Start_Primers'], row['End_Primers']), 
+            axis=1
+        )
+        
+        # Calculate size compliance
+        if not ignore_amplicon_size:
+            matched_pairs['Size_Compliant'] = matched_pairs.apply(
+                lambda row: is_size_compliant(row, primers_df, size_tolerance),
+                axis=1
+            )
+        else:
+            matched_pairs['Size_Compliant'] = True
             
-            # Get orientations
-            start_orient = row['Start_Terminal_Matches'].split('_')[-3]  # Get orientation before _Terminal_
-            end_orient = row['End_Terminal_Matches'].split('_')[-3]  # Get orientation before _Terminal_
-            
-            # Check for valid orientation combinations
-            valid_orientation_pairs = {
-                ('Forward', 'ForwardComp'),  # Forward 3' at start, RC of reverse 3' at end
-                ('ReverseComp', 'Reverse'),  # RC of reverse 3' at start, Forward 3' at end
-            }
-            
-            has_correct_orientation = (start_orient, end_orient) in valid_orientation_pairs
-            
-            # Check if primers are from the same pair and have correct orientation
-            if start_primer == end_primer and has_correct_orientation:
-                if is_size_compliant(row, primers_df, size_tolerance):
-                    paired_terminal_correct_size = pd.concat([paired_terminal_correct_size, pd.DataFrame([row])])
-                else:
-                    paired_terminal_wrong_size = pd.concat([paired_terminal_wrong_size, pd.DataFrame([row])])
-            else:
-                # If primers don't match or orientation is wrong, treat as single terminal matches
-                if is_size_compliant(row, primers_df, size_tolerance):
-                    single_terminal_correct_size = pd.concat([single_terminal_correct_size, pd.DataFrame([row])])
-                else:
-                    single_terminal_wrong_size = pd.concat([single_terminal_wrong_size, pd.DataFrame([row])])
-
-    # Process single terminal matches
-    single_terminal_mask = (
-        (result_df['Start_Primers'] == 'None') & 
-        (result_df['End_Primers'] == 'None') &
-        ((result_df['Start_Terminal_Matches'] != 'None') & (result_df['End_Terminal_Matches'] == 'None') |
-         (result_df['Start_Terminal_Matches'] == 'None') & (result_df['End_Terminal_Matches'] != 'None'))
-    )
-    
-    if single_terminal_mask.any():
-        single_terminal = result_df[single_terminal_mask]
-        for _, row in single_terminal.iterrows():
-            primer_name = None
-            if row['Start_Terminal_Matches'] != 'None':
-                primer_name = get_base_primer_name(row['Start_Terminal_Matches'])
-            elif row['End_Terminal_Matches'] != 'None':
-                primer_name = get_base_primer_name(row['End_Terminal_Matches'])
-                
-            if primer_name and is_size_compliant(row, primers_df, size_tolerance):
-                single_terminal_correct_size = pd.concat([single_terminal_correct_size, pd.DataFrame([row])])
-            else:
-                single_terminal_wrong_size = pd.concat([single_terminal_wrong_size, pd.DataFrame([row])])
+        # Filter for orientation and size
+        correct_orient = matched_pairs[matched_pairs['Correct_Orientation']]
+        if not correct_orient.empty:
+            correct_orient_right_size = correct_orient[correct_orient['Size_Compliant']]
+            correct_orient_wrong_size = correct_orient[~correct_orient['Size_Compliant']]
+    else:
+        matched_pairs = pd.DataFrame()
 
     # Process hybrid matches
     hybrid_mask = (
@@ -791,6 +798,47 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
             else:
                 hybrid_wrong_length = pd.concat([hybrid_wrong_length, pd.DataFrame([row])])
 
+    # Process single terminal matches
+    single_terminal_mask = (
+        (result_df['Start_Primers'] == 'None') & 
+        (result_df['End_Primers'] == 'None') &
+        ((result_df['Start_Terminal_Matches'] != 'None') & (result_df['End_Terminal_Matches'] == 'None') |
+         (result_df['Start_Terminal_Matches'] == 'None') & (result_df['End_Terminal_Matches'] != 'None'))
+    )
+    
+    if single_terminal_mask.any():
+        single_terminal = result_df[single_terminal_mask]
+        for _, row in single_terminal.iterrows():
+            primer_name = None
+            if row['Start_Terminal_Matches'] != 'None':
+                primer_name = get_base_primer_name(row['Start_Terminal_Matches'])
+            elif row['End_Terminal_Matches'] != 'None':
+                primer_name = get_base_primer_name(row['End_Terminal_Matches'])
+                
+            if is_size_compliant(row, primers_df, size_tolerance):
+                single_terminal_correct_size = pd.concat([single_terminal_correct_size, pd.DataFrame([row])])
+            else:
+                single_terminal_wrong_size = pd.concat([single_terminal_wrong_size, pd.DataFrame([row])])
+
+    # Process paired terminal matches
+    paired_terminal_mask = (
+        (result_df['Start_Primers'] == 'None') & 
+        (result_df['End_Primers'] == 'None') &
+        (result_df['Start_Terminal_Matches'] != 'None') & 
+        (result_df['End_Terminal_Matches'] != 'None')
+    )
+    
+    if paired_terminal_mask.any():
+        paired_terminal = result_df[paired_terminal_mask]
+        for _, row in paired_terminal.iterrows():
+            start_primer = get_base_primer_name(row['Start_Terminal_Matches'])
+            end_primer = get_base_primer_name(row['End_Terminal_Matches'])
+            
+            if start_primer == end_primer and is_size_compliant(row, primers_df, size_tolerance):
+                paired_terminal_correct_size = pd.concat([paired_terminal_correct_size, pd.DataFrame([row])])
+            else:
+                paired_terminal_wrong_size = pd.concat([paired_terminal_wrong_size, pd.DataFrame([row])])
+
     # Process single end primers
     single_end_only = result_df[
         ((result_df['Start_Primers'] != 'None') & (result_df['End_Primers'] == 'None') & (result_df['End_Terminal_Matches'] == 'None')) |
@@ -801,8 +849,7 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
     multi_primer_pairs = result_df[
         (result_df['Start_Primers'] != 'None') & 
         (result_df['End_Primers'] != 'None') &
-        ((result_df['Start_Primers'].str.count(',') > 0) | 
-         (result_df['End_Primers'].str.count(',') > 0))
+        ((result_df['Start_Primer_Count'] > 1) | (result_df['End_Primer_Count'] > 1))
     ]
 
     # Process mismatched pairs
@@ -852,6 +899,11 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
             'Percentage': (len(paired_terminal_wrong_size) / total_reads) * 100
         },
         {
+            'Category': '🟨 Single-end primers only (no terminal match)',
+            'Count': len(single_end_only),
+            'Percentage': (len(single_end_only) / total_reads) * 100
+        },
+        {
             'Category': '🟨 Single terminal match only - correct size',
             'Count': len(single_terminal_correct_size),
             'Percentage': (len(single_terminal_correct_size) / total_reads) * 100
@@ -860,11 +912,6 @@ def create_analysis_summary(result_df, primers_df, ignore_amplicon_size=False, d
             'Category': '🟥 Single terminal match only - wrong size',
             'Count': len(single_terminal_wrong_size),
             'Percentage': (len(single_terminal_wrong_size) / total_reads) * 100
-        },
-        {
-            'Category': '🟥 Single-end primers only (no terminal match)',
-            'Count': len(single_end_only),
-            'Percentage': (len(single_end_only) / total_reads) * 100
         },
         {
             'Category': '🟥 Multi-primer pairs (>1 primer at an end)',
@@ -949,19 +996,12 @@ def is_size_compliant(row, primers_df, size_tolerance=0.10):
         start_orient = row['Start_Terminal_Matches'].split('_')[-3]  # Get orientation before _Terminal_
         end_orient = row['End_Terminal_Matches'].split('_')[-3]  # Get orientation before _Terminal_
         
-        # The test data uses:
-        # - Forward primer 3' end at start (Forward)
-        # - RC of reverse primer 3' end at end (ForwardComp)
-        valid_orientation_pairs = {
-            ('Forward', 'ForwardComp'),  # Forward 3' at start, RC of reverse 3' at end
-            ('ReverseComp', 'Reverse'),  # RC of reverse 3' at start, Forward 3' at end
-        }
-        
-        has_correct_orientation = (start_orient, end_orient) in valid_orientation_pairs
+        # Check for correct orientation (Forward at start, Reverse at end or vice versa)
+        has_correct_orientation = ((start_orient.startswith('Forward') and end_orient.startswith('Reverse')) or
+                                 (start_orient.startswith('Reverse') and end_orient.startswith('Forward')))
         if not has_correct_orientation:
             return False
             
-        # The test data uses the full target size for validation
         return min_allowed <= row['Read_Length'] <= max_allowed
         
     elif is_terminal_only and not is_paired_terminal:
@@ -1377,7 +1417,28 @@ def save_results(results, output_prefix, primers_df):
     """Save analysis results to files with additional primer combination summaries."""
     os.makedirs(os.path.dirname(output_prefix) if os.path.dirname(output_prefix) else '.', exist_ok=True)
     
-    # Save summary with the correct filename
+    def create_primer_combination_summary(df, total_reads):
+        """Helper function to create summary of primer combinations"""
+        if df.empty:
+            return pd.DataFrame()
+            
+        # Create a clean copy of the data
+        df = df.copy()
+        
+        # Group by start and end primers to count occurrences
+        summary = df.groupby(['Start_Primers', 'End_Primers'], observed=True).size().reset_index()
+        summary.columns = ['Start_Primers', 'End_Primers', 'Occurrence_Count']
+        
+        # Calculate percentage of total reads
+        summary['Percent_of_Total_Reads'] = (summary['Occurrence_Count'] / total_reads * 100).round(2)
+        summary = summary.sort_values('Occurrence_Count', ascending=False)
+        
+        return summary
+    
+    # Get total reads analyzed
+    total_reads = len(results['results'])
+    
+    # Save summary
     results['summary'].to_csv(f"{output_prefix}_summary.csv", index=False)
     
     # Save all results with primer details
@@ -1537,10 +1598,9 @@ def main():
         # Save results
         save_results(results, args.output, primers_df)
         
-        # Also save summary with the correct filename for tests
-        output_dir = os.path.dirname(args.output) if os.path.dirname(args.output) else '.'
-        summary_path = os.path.join(output_dir, 'uradime_results_summary.csv')
-        results['summary'].to_csv(summary_path, index=False, encoding='utf-8')
+        # Save filtered BAM if requested
+        if args.filtered_bam and not results['matched_pairs'].empty:
+            save_filtered_bam(args.bam, results['matched_pairs'], args.filtered_bam)
         
         # Print summary to console
         print("\nAnalysis Summary:")
@@ -1548,15 +1608,6 @@ def main():
         
         if args.verbose:
             print(f"\nResults saved with prefix: {args.output}")
-            print(f"Summary saved to: {summary_path}")
-            print(f"Output directory: {output_dir}")
-            print(f"Files in output directory:")
-            for f in os.listdir(output_dir):
-                print(f"  {f}")
-        
-        # Save filtered BAM if requested
-        if args.filtered_bam and not results['matched_pairs'].empty:
-            save_filtered_bam(args.bam, results['matched_pairs'], args.filtered_bam)
         
         return 0
         
