@@ -35,6 +35,7 @@ uradime \
     --terminus-length 14 \            # Length of terminus to check for partial matches
     --overlap-threshold 0.8 \         # Minimum fraction of overlap required to consider primers as overlapping (0.0-1.0), this is added for hissPCR support
     --downsample 5.0 \                # Percentage of reads to randomly sample from the BAM file (0.1-100.0)
+    --filtered-bam filtered.bam \     # Output BAM file containing only correctly matched and sized reads
     -v                                # Verbose output
 ```
 
@@ -43,20 +44,63 @@ uradime \
 ### Python Package
 
 ```python
-from uradime import bam_to_fasta_parallel, create_analysis_summary, load_primers
+from uradime import bam_to_fasta_parallel, create_analysis_summary, load_primers, parallel_analysis_pipeline
 
-# Load and analyze BAM file
+# Basic usage
 result_df = bam_to_fasta_parallel(
     bam_path="your_file.bam",
     primer_file="primers.tsv",
     num_threads=4
 )
 
+# Advanced usage with all parameters
+result_df = bam_to_fasta_parallel(
+    bam_path="your_file.bam",
+    primer_file="primers.tsv",
+    window_size=20,              # Allowed padding on 5' ends
+    unaligned_only=False,        # Process only unaligned reads
+    max_reads=200,               # Maximum reads to process (0 for all)
+    num_threads=4,               # Number of threads
+    chunk_size=50,               # Reads per chunk for parallel processing
+    downsample_percentage=100.0, # Percentage of reads to analyze
+    max_distance=2,              # Maximum Levenshtein distance for matching
+    overlap_threshold=0.8        # Minimum primer overlap fraction
+)
+
 # Load primers for analysis
 primers_df, _ = load_primers("primers.tsv")
 
 # Create analysis summary
-summary_df, matched_pairs, mismatched_pairs = create_analysis_summary(result_df, primers_df)
+summary_df, matched_pairs, mismatched_pairs = create_analysis_summary(
+    result_df,
+    primers_df,
+    ignore_amplicon_size=False,  # Ignore amplicon size checks
+    debug=False,                 # Print debug information
+    size_tolerance=0.10          # Size tolerance as fraction of expected size
+)
+
+# Complete analysis pipeline
+results = parallel_analysis_pipeline(
+    bam_path="your_file.bam",
+    primer_file="primers.tsv",
+    window_size=20,
+    num_threads=4,
+    max_reads=200,
+    chunk_size=50,
+    ignore_amplicon_size=False,
+    max_distance=2,
+    downsample_percentage=100.0,
+    unaligned_only=False,
+    debug=False,
+    size_tolerance=0.10,
+    overlap_threshold=0.8
+)
+
+# Access pipeline results
+result_df = results['results']           # Complete analysis results
+summary_df = results['summary']          # Analysis summary
+matched_pairs = results['matched_pairs'] # Reads with matching primer pairs
+mismatched_pairs = results['mismatched_pairs'] # Reads with mismatched primers
 ```
 
 ## Input Files
