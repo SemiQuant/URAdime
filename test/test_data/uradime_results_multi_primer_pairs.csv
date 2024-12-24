@@ -1,0 +1,24 @@
+Read_Name,Start_Primers,End_Primers,Start_Terminal_Matches,End_Terminal_Matches,Read_Length,Start_Region_Length,End_Region_Length,Is_Paired,Is_Unmapped,Start_Primer_Count,End_Primer_Count,Start_Primer_Name,End_Primer_Name,Correct_Orientation,Size_Compliant
+multi_primer_Pair1_9,"Pair1_Forward, Pair2_Forward",Pair2_Forward,None,None,44,42,42,False,True,2,1,Pair1,Pair2,False,False
+multi_primer_Pair3_14,"Pair1_Forward, Pair1_ReverseComp",Pair1_Forward,None,None,44,42,42,False,True,2,1,Pair1,Pair1,False,False
+multi_primer_Pair2_13,"Pair2_Forward, Pair1_ReverseComp",Pair1_ReverseComp,None,None,44,42,42,False,True,2,1,Pair2,Pair1,False,False
+multi_primer_Pair2_10,"Pair2_Forward, Pair1_ReverseComp",Pair1_ReverseComp,None,None,44,42,42,False,True,2,1,Pair2,Pair1,False,False
+multi_primer_Pair1_6,"Pair1_Forward, Pair2_Forward",Pair2_ForwardComp,None,None,44,42,42,False,True,2,1,Pair1,Pair2,False,False
+multi_primer_Pair1_12,"Pair1_Forward, Pair2_Forward",Pair2_ForwardComp,None,None,44,42,42,False,True,2,1,Pair1,Pair2,False,False
+multi_primer_Pair2_7,"Pair2_Forward, Pair1_ReverseComp",Pair1_ReverseComp,None,None,44,42,42,False,True,2,1,Pair2,Pair1,False,False
+wrong_size_Pair2_34,Pair2_Forward,"Pair2_Reverse, Pair2_Forward",None,None,44,42,42,False,True,1,2,Pair2,Pair2,False,False
+multi_primer_Pair1_3,"Pair1_Forward, Pair2_Forward",Pair2_ForwardComp,None,None,44,42,42,False,True,2,1,Pair1,Pair2,False,False
+multi_primer_Pair3_8,"Pair1_Forward, Pair1_ReverseComp",Pair1_Forward,None,None,44,42,42,False,True,2,1,Pair1,Pair1,False,False
+multi_primer_Pair3_17,"Pair1_Forward, Pair1_ReverseComp",Pair1_Forward,None,None,44,42,42,False,True,2,1,Pair1,Pair1,False,False
+multi_primer_Pair2_1,"Pair2_Forward, Pair1_ReverseComp",Pair1_ReverseComp,None,None,44,42,42,False,True,2,1,Pair2,Pair1,False,False
+multi_primer_Pair3_2,"Pair1_Forward, Pair1_ReverseComp",Pair1_Forward,None,None,44,42,42,False,True,2,1,Pair1,Pair1,False,False
+wrong_size_Pair3_74,"Pair1_Forward, Pair1_ReverseComp",Pair1_Forward,None,None,44,42,42,False,True,2,1,Pair1,Pair1,False,False
+multi_primer_Pair1_0,"Pair1_Forward, Pair2_Forward",Pair2_ForwardComp,None,None,44,42,42,False,True,2,1,Pair1,Pair2,False,False
+multi_primer_Pair3_11,"Pair1_Forward, Pair1_ReverseComp",Pair1_Forward,None,None,44,42,42,False,True,2,1,Pair1,Pair1,False,False
+multi_primer_Pair1_18,"Pair1_Forward, Pair2_Forward",Pair2_ForwardComp,None,None,44,42,42,False,True,2,1,Pair1,Pair2,False,False
+multi_primer_Pair3_5,"Pair1_Forward, Pair1_ReverseComp",Pair1_Forward,None,None,44,42,42,False,True,2,1,Pair1,Pair1,False,False
+multi_primer_Pair1_15,"Pair1_Forward, Pair2_Forward",Pair2_ForwardComp,None,None,44,42,42,False,True,2,1,Pair1,Pair2,False,False
+wrong_size_Pair2_64,Pair2_Forward,"Pair2_ReverseComp, Pair2_Reverse",None,None,44,42,42,False,True,1,2,Pair2,Pair2,False,False
+multi_primer_Pair2_16,"Pair2_Forward, Pair1_ReverseComp",Pair1_ReverseComp,None,None,44,42,42,False,True,2,1,Pair2,Pair1,False,False
+multi_primer_Pair2_19,"Pair2_Forward, Pair1_ReverseComp",Pair1_ReverseComp,None,None,44,42,42,False,True,2,1,Pair2,Pair1,False,False
+multi_primer_Pair2_4,"Pair2_Forward, Pair1_ReverseComp",Pair1_ReverseComp,None,None,44,42,42,False,True,2,1,Pair2,Pair1,False,False
