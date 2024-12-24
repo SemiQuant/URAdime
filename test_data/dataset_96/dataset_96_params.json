@@ -1,0 +1,21 @@
+{
+  "num_primers": 6,
+  "min_size": 112,
+  "max_size": 645,
+  "total_reads": 806,
+  "gc_content": 0.44048799728295557,
+  "category_ratios": {
+    "no_primers": 0.06758246770850744,
+    "correct_pairs": 0.3063759306562332,
+    "wrong_size": 0.06965659839028301,
+    "single_end": 0.06968534512409265,
+    "mismatched_pairs": 0.06209426788747805,
+    "full_terminal_match_correct": 0.060791425399651676,
+    "full_terminal_match_wrong": 0.06571795887834812,
+    "single_terminal_correct": 0.06436148156484485,
+    "single_terminal_wrong": 0.06677255322170193,
+    "paired_terminal_correct": 0.06926764302323898,
+    "paired_terminal_wrong": 0.06264960513341356,
+    "multi_primer": 0.0618740602845803
+  }
+}

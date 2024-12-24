@@ -1,0 +1,13 @@
+Category,Count,Percentage
+🟥 No primers or terminal matches detected,64,6.3
+🟩 Matched pairs - correct orientation and size,275,27.2
+"🟧 Matched pairs - correct orientation, wrong size",65,6.4
+🟨 One full primer + one terminal match - correct size,66,6.5
+🟥 One full primer + one terminal match - wrong size,71,7.0
+🟨 Paired terminal matches - correct size,87,8.6
+🟥 Paired terminal matches - wrong size,46,4.5
+🟨 Single-end primers only (no terminal match),67,6.6
+🟨 Single terminal match only - correct size,86,8.5
+🟥 Single terminal match only - wrong size,45,4.5
+🟥 Multi-primer pairs (>1 primer at an end),69,6.8
+🟥 Mismatched primer pairs (different primers),70,6.9

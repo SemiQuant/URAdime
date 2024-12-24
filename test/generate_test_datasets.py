@@ -256,7 +256,7 @@ def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
                     get_valid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
                     gc_content=gc_content
                 ) +
-                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+                str(Seq(row['Reverse'][:15]).reverse_complement())  # First 15 bases from 5' end
             )
         },
         'full_terminal_match_wrong': {
@@ -268,7 +268,7 @@ def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
                     get_invalid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
                     gc_content=gc_content
                 ) +
-                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+                str(Seq(row['Reverse'][:15]).reverse_complement())  # First 15 bases from 5' end
             )
         },
         'single_terminal_correct': {
@@ -279,7 +279,7 @@ def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
                     get_valid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
                     gc_content=gc_content
                 ) +
-                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+                str(Seq(row['Reverse'][:15]).reverse_complement())  # First 15 bases from 5' end
             )
         },
         'single_terminal_wrong': {
@@ -290,31 +290,31 @@ def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
                     get_invalid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
                     gc_content=gc_content
                 ) +
-                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+                str(Seq(row['Reverse'][:15]).reverse_complement())  # First 15 bases from 5' end
             )
         },
         'paired_terminal_correct': {
             'count': category_counts['paired_terminal_correct'],
             'category': '🟨 Paired terminal matches - correct size',
             'generator': lambda i, row: (
-                row['Forward'][-15:] +  # First 15 bases of forward primer
+                row['Forward'][:15] +  # First 15 bases of forward primer
                 generate_read(
                     get_valid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
                     gc_content=gc_content
                 ) +
-                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+                str(Seq(row['Reverse'][:15]).reverse_complement())  # First 15 bases from 5' end
             )
         },
         'paired_terminal_wrong': {
             'count': category_counts['paired_terminal_wrong'],
             'category': '🟥 Paired terminal matches - wrong size',
             'generator': lambda i, row: (
-                row['Forward'][-15:] +  # First 15 bases of forward primer
+                row['Forward'][:15] +  # First 15 bases of forward primer
                 generate_read(
                     get_invalid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
                     gc_content=gc_content
                 ) +
-                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+                str(Seq(row['Reverse'][:15]).reverse_complement())  # First 15 bases from 5' end
             )
         },
         'multi_primer': {
