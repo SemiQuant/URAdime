@@ -24,7 +24,7 @@ def print_banner():
 ══════════════════════════════════════════════════════════════════════════════
                            URAdime v{:^7}                
                 Universal Read Analysis of DIMErs    
-════════════════════════════════════════════════════════════════��═════════════""".format("0.2.0")
+════════════════════════════════════════════════════════════════��═══════════""".format("0.2.0")
     print(banner)
 
 def load_primers(primer_file):
@@ -81,36 +81,26 @@ def is_match(seq1, seq2, max_distance):
         return False
     
     try:
-        # Convert to uppercase for case-insensitive comparison
+        # Convert to uppercase and remove N's for comparing lengths
         seq1 = str(seq1).upper()
         seq2 = str(seq2).upper()
         
-        # If sequences are of different lengths, try sliding window approach
-        if len(seq1) != len(seq2):
-            longer, shorter = (seq1, seq2) if len(seq1) > len(seq2) else (seq2, seq1)
-            for i in range(len(longer) - len(shorter) + 1):
-                window = longer[i:i+len(shorter)]
-                mismatches = 0
-                for w, s in zip(window, shorter):
+        for i in range(len(seq1) - len(seq2) + 1):
+            window = seq1[i:i+len(seq2)]
+            if len(window) == len(seq2):
+                # Calculate distance considering N's as potential matches
+                distance = 0
+                for w, s in zip(window, seq2):
                     if w != s and w != 'N' and s != 'N':
-                        mismatches += 1
-                        if mismatches > max_distance:
+                        distance += 1
+                        if distance > max_distance:
                             break
-                if mismatches <= max_distance:
+                
+                if distance <= max_distance:
                     return True
-            return False
-        
-        # For same length sequences, direct comparison
-        mismatches = 0
-        for c1, c2 in zip(seq1, seq2):
-            if c1 != c2 and c1 != 'N' and c2 != 'N':
-                mismatches += 1
-                if mismatches > max_distance:
-                    return False
-        return True
-        
     except:
         return False
+    return False
 
 def check_terminal_match(sequence, primer, terminus_length=15, max_distance=2):
     """
@@ -146,35 +136,14 @@ def check_terminal_match(sequence, primer, terminus_length=15, max_distance=2):
     ]
     
     for seq_part, primer_part in combinations:
-        # Count mismatches, treating N's as potential matches
-        mismatches = 0
-        for s, p in zip(seq_part, primer_part):
-            if s != p and s != 'N' and p != 'N':
-                mismatches += 1
-                if mismatches > max_distance:
-                    break
-        
-        # Consider it a terminal match if:
-        # 1. It has acceptable mismatches
-        # 2. It's a partial match (shorter than full primer)
-        if mismatches <= max_distance and len(seq_part) < len(primer):
-            found_match = True
-            best_match_length = terminus_length
-            
-            # Try progressively larger windows if initial match found
-            for window_size in range(terminus_length + 1, min(len(sequence), len(primer))):
-                if len(seq_part) >= window_size and len(primer_part) >= window_size:
-                    extended_mismatches = 0
-                    for s, p in zip(seq_part[:window_size], primer_part[:window_size]):
-                        if s != p and s != 'N' and p != 'N':
-                            extended_mismatches += 1
-                            if extended_mismatches > max_distance:
-                                break
-                    
-                    if extended_mismatches <= max_distance:
-                        best_match_length = window_size
-                    else:
-                        break
+        # Try progressively larger windows
+        for window_size in range(terminus_length, min(len(sequence), len(primer)) + 1):
+            if len(seq_part) >= window_size and len(primer_part) >= window_size:
+                if is_match(seq_part[:window_size], primer_part[:window_size], max_distance):
+                    found_match = True
+                    best_match_length = max(best_match_length, window_size)
+                else:
+                    break  # Stop increasing window size if no match found
     
     return found_match, best_match_length
 
@@ -214,27 +183,15 @@ def find_primers_in_region(sequence, primers_df, window_size=20, max_distance=2,
             (str(Seq(reverse_primer).reverse_complement()), 'ReverseComp')
         ]
         
-        # Calculate effective window size
-        max_primer_length = max(
-            primers_df['Forward'].apply(len).max(),
-            primers_df['Reverse'].apply(len).max()
-        )
-        effective_window = window_size + max_primer_length
-        
         for primer_seq, orientation in primer_checks:
-            # Check for full matches first
-            for i in range(min(effective_window, len(sequence) - len(primer_seq) + 1)):
+            # Search for matches within the window
+            for i in range(min(window_size, len(sequence) - len(primer_seq) + 1)):
                 window = sequence[i:i+len(primer_seq)]
                 if len(window) == len(primer_seq):
-                    # Count mismatches, treating N's as potential matches
-                    mismatches = 0
-                    for w, p in zip(window, primer_seq):
-                        if w != p and w != 'N' and p != 'N':
-                            mismatches += 1
-                            if mismatches > max_distance:
-                                break
+                    # Calculate mismatches considering N's
+                    mismatches = sum(1 for w, p in zip(window, primer_seq) 
+                                   if w != p and w != 'N' and p != 'N')
                     
-                    # Consider it a full match if it matches the entire primer sequence
                     if mismatches <= max_distance:
                         match_details.append({
                             'name': f"{primer['Name']}_{orientation}",

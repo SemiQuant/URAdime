@@ -1,0 +1,14 @@
+{
+  "num_primers": 4,
+  "min_size": 149,
+  "max_size": 995,
+  "total_reads": 1095,
+  "gc_content": 0.5192161193666116,
+  "category_ratios": {
+    "no_primers": 0.34977465902751265,
+    "correct_pairs": 0.030693428734946286,
+    "wrong_size": 0.45602109495748644,
+    "single_end": 0.11697957720276315,
+    "mismatched_pairs": 0.008777532731557135
+  }
+}

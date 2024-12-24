@@ -1,0 +1,4 @@
+Start_Primers,End_Primers,Occurrence_Count,Percent_of_Total_Reads
+Pair1_Forward,Pair2_Reverse,1,0.12
+Pair2_Forward,Pair3_Reverse,1,0.12
+Pair3_Forward,Pair4_Reverse,1,0.12

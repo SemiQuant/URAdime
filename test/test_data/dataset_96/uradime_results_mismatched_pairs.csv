@@ -1,0 +1,3 @@
+Read_Name,Start_Primers,End_Primers,Start_Terminal_Matches,End_Terminal_Matches,Read_Length,Start_Region_Length,End_Region_Length,Is_Paired,Is_Unmapped,Start_Primer_Count,End_Primer_Count,Start_Primer_Name,End_Primer_Name
+mismatched_pairs_Pair2_1,Pair2_Forward,Pair3_Reverse,None,None,318,55,55,False,True,1,1,Pair2,Pair3
+mismatched_pairs_Pair1_0,Pair1_Forward,Pair2_Reverse,None,None,205,55,55,False,True,1,1,Pair1,Pair2

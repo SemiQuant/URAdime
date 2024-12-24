@@ -115,19 +115,62 @@ def get_invalid_size(size: int, primers_df: pd.DataFrame, row_idx: int) -> int:
 def create_dataset_params() -> Dict:
     """Create random parameters for a dataset"""
     return {
-        'num_primers': random.randint(3, 10),
+        'num_primers': random.randint(5, 10),
         'min_size': random.randint(100, 200),
         'max_size': random.randint(300, 1000),
         'total_reads': random.randint(800, 1200),
         'gc_content': random.uniform(0.4, 0.6),
         'category_ratios': {
-            'no_primers': random.uniform(0.3, 0.4),
-            'correct_pairs': random.uniform(0.01, 0.05),
-            'wrong_size': random.uniform(0.4, 0.5),
-            'single_end': random.uniform(0.1, 0.2),
-            'mismatched_pairs': random.uniform(0.001, 0.01)
+            'no_primers': random.uniform(0.06, 0.07),
+            'correct_pairs': random.uniform(0.29, 0.31),  # ~30% for matched pairs
+            'wrong_size': random.uniform(0.06, 0.07),
+            'single_end': random.uniform(0.06, 0.07),
+            'mismatched_pairs': random.uniform(0.06, 0.07),
+            'full_terminal_match_correct': random.uniform(0.06, 0.07),
+            'full_terminal_match_wrong': random.uniform(0.06, 0.07),
+            'single_terminal_correct': random.uniform(0.06, 0.07),
+            'single_terminal_wrong': random.uniform(0.06, 0.07),
+            'paired_terminal_correct': random.uniform(0.06, 0.07),
+            'paired_terminal_wrong': random.uniform(0.06, 0.07),
+            'multi_primer': random.uniform(0.06, 0.07)
         }
     }
+
+def generate_non_matching_sequence(length: int, avoid_seq: str, gc_content: float = 0.5) -> str:
+    """Generate a sequence that's guaranteed to be different from any primer sequence"""
+    # Create a sequence that's completely different from the primer
+    # by using the complement of each base
+    complement_map = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
+    return ''.join(complement_map[base] for base in avoid_seq[:length])
+
+def get_valid_size_with_terminal(size: int, primers_df: pd.DataFrame, index: int) -> int:
+    """Get a valid size that accounts for terminal matches"""
+    row = primers_df.iloc[index]
+    # For terminal matches, we want the total size to be within tolerance
+    target_size = size  # Use the full target size
+    
+    # Calculate tolerance range (9.5% to be safe within URAdime's 10% tolerance)
+    min_size = int(target_size * 0.905)
+    max_size = int(target_size * 1.095)
+    
+    return random.randint(min_size, max_size)
+
+def get_invalid_size_with_terminal(size: int, primers_df: pd.DataFrame, index: int) -> int:
+    """Get an invalid size that accounts for terminal matches"""
+    row = primers_df.iloc[index]
+    target_size = size  # Use the full target size
+    
+    # Generate a size that's either too small or too large
+    if random.random() < 0.5:
+        # Too small: less than 90% of target
+        min_size = max(50, int(target_size * 0.5))  # At least 50 bases or 50% of target size
+        max_size = int(target_size * 0.89)  # Just under 90%
+    else:
+        # Too large: more than 110% of target
+        min_size = int(target_size * 1.11)  # Just over 110%
+        max_size = int(target_size * 1.5)   # Up to 150% of target size
+    
+    return random.randint(min_size, max_size)
 
 def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
     """Create test reads for each category with varying parameters"""
@@ -153,7 +196,7 @@ def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
             'count': category_counts['no_primers'],
             'category': '🟥 No primers or terminal matches detected',
             'generator': lambda i, row: generate_read(
-                random.randint(40, 60),
+                random.randint(params['min_size'], params['max_size']),
                 gc_content=gc_content
             )
         },
@@ -161,11 +204,11 @@ def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
             'count': category_counts['correct_pairs'],
             'category': '🟩 Matched pairs - correct orientation and size',
             'generator': lambda i, row: (
-                row['Forward'] + 
+                row['Forward'] +
                 generate_read(
                     get_valid_size(row['Size'], primers_df, i % len(primers_df)),
                     gc_content=gc_content
-                ) + 
+                ) +
                 str(Seq(row['Reverse']).reverse_complement())
             )
         },
@@ -173,11 +216,11 @@ def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
             'count': category_counts['wrong_size'],
             'category': '🟧 Matched pairs - correct orientation, wrong size',
             'generator': lambda i, row: (
-                row['Forward'] + 
+                row['Forward'] +
                 generate_read(
                     get_invalid_size(row['Size'], primers_df, i % len(primers_df)),
                     gc_content=gc_content
-                ) + 
+                ) +
                 str(Seq(row['Reverse']).reverse_complement())
             )
         },
@@ -185,9 +228,9 @@ def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
             'count': category_counts['single_end'],
             'category': '🟨 Single-end primers only (no terminal match)',
             'generator': lambda i, row: (
-                row['Forward'] + 
+                row['Forward'] +
                 generate_read(
-                    get_invalid_size(row['Size'], primers_df, i % len(primers_df)),
+                    get_valid_size(row['Size'], primers_df, i % len(primers_df)),
                     gc_content=gc_content
                 )
             )
@@ -196,12 +239,95 @@ def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
             'count': category_counts['mismatched_pairs'],
             'category': '🟥 Mismatched primer pairs (different primers)',
             'generator': lambda i, row: (
-                row['Forward'] + 
+                row['Forward'] +
                 generate_read(
                     get_valid_size(row['Size'], primers_df, i % len(primers_df)),
                     gc_content=gc_content
-                ) + 
+                ) +
                 str(Seq(primers_df.iloc[(i + 1) % len(primers_df)]['Reverse']).reverse_complement())
+            )
+        },
+        'full_terminal_match_correct': {
+            'count': category_counts['full_terminal_match_correct'],
+            'category': '🟨 One full primer + one terminal match - correct size',
+            'generator': lambda i, row: (
+                row['Forward'] +
+                generate_read(
+                    get_valid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
+                    gc_content=gc_content
+                ) +
+                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+            )
+        },
+        'full_terminal_match_wrong': {
+            'count': category_counts['full_terminal_match_wrong'],
+            'category': '🟥 One full primer + one terminal match - wrong size',
+            'generator': lambda i, row: (
+                row['Forward'] +
+                generate_read(
+                    get_invalid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
+                    gc_content=gc_content
+                ) +
+                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+            )
+        },
+        'single_terminal_correct': {
+            'count': category_counts['single_terminal_correct'],
+            'category': '🟨 Single terminal match only - correct size',
+            'generator': lambda i, row: (
+                generate_read(
+                    get_valid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
+                    gc_content=gc_content
+                ) +
+                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+            )
+        },
+        'single_terminal_wrong': {
+            'count': category_counts['single_terminal_wrong'],
+            'category': '🟥 Single terminal match only - wrong size',
+            'generator': lambda i, row: (
+                generate_read(
+                    get_invalid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
+                    gc_content=gc_content
+                ) +
+                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+            )
+        },
+        'paired_terminal_correct': {
+            'count': category_counts['paired_terminal_correct'],
+            'category': '🟨 Paired terminal matches - correct size',
+            'generator': lambda i, row: (
+                row['Forward'][-15:] +  # First 15 bases of forward primer
+                generate_read(
+                    get_valid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
+                    gc_content=gc_content
+                ) +
+                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+            )
+        },
+        'paired_terminal_wrong': {
+            'count': category_counts['paired_terminal_wrong'],
+            'category': '🟥 Paired terminal matches - wrong size',
+            'generator': lambda i, row: (
+                row['Forward'][-15:] +  # First 15 bases of forward primer
+                generate_read(
+                    get_invalid_size_with_terminal(row['Size'], primers_df, i % len(primers_df)),
+                    gc_content=gc_content
+                ) +
+                str(Seq(row['Reverse']).reverse_complement())[-15:]  # Last 15 bases of reverse primer
+            )
+        },
+        'multi_primer': {
+            'count': category_counts['multi_primer'],
+            'category': '🟥 Multi-primer pairs (>1 primer at an end)',
+            'generator': lambda i, row: (
+                row['Forward'] +
+                primers_df.iloc[(i + 1) % len(primers_df)]['Forward'] +
+                generate_read(
+                    get_valid_size(row['Size'], primers_df, i % len(primers_df)),
+                    gc_content=gc_content
+                ) +
+                str(Seq(row['Reverse']).reverse_complement())
             )
         }
     }
@@ -222,7 +348,7 @@ def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
     
     # Shuffle reads to avoid any potential bias
     random.shuffle(reads)
-    return reads
+    return reads[:total_reads]  # Ensure we return exactly the requested number of reads
 
 def create_bam_file(reads: List[Dict], output_bam: str):
     """Create BAM file from generated reads"""
@@ -332,7 +458,7 @@ def save_dataset_params(params: Dict, output_dir: str, dataset_num: int):
     with open(params_file, 'w') as f:
         json.dump(params, f, indent=2)
 
-def create_final_tally(output_dir: str) -> str:
+def create_final_tally(output_dir: str) -> Tuple[str, pd.DataFrame]:
     """Create a final tally table summarizing all datasets"""
     all_datasets = []
     
@@ -345,7 +471,7 @@ def create_final_tally(output_dir: str) -> str:
             all_datasets.append(df)
     
     if not all_datasets:
-        return "No datasets found!"
+        return "No datasets found!", pd.DataFrame()
     
     # Combine all results
     combined_df = pd.concat(all_datasets)
@@ -383,6 +509,8 @@ def create_final_tally(output_dir: str) -> str:
         '🟥': {'expected': 0, 'actual': 0, 'perfect': 0, 'total': 0}
     }
     
+    section_stats = []
+    
     for emoji in ['🟩', '🟧', '🟨', '🟥']:
         section_data = stats_df[stats_df['Category'].str.startswith(emoji)]
         if not section_data.empty:
@@ -407,6 +535,10 @@ def create_final_tally(output_dir: str) -> str:
                 showindex=False
             )
             table += f"{section_table}\n\n"
+            
+            # Add section data to DataFrame
+            for _, row in section_data.iterrows():
+                section_stats.append(row.to_dict())
     
     # Add overall statistics in the same format
     table += "=== Overall Statistics ===\n"
@@ -416,14 +548,16 @@ def create_final_tally(output_dir: str) -> str:
     for emoji, name in [('🟩', 'Green Total'), ('🟧', 'Orange Total'), ('🟨', 'Yellow Total'), ('🟥', 'Red Total')]:
         totals = section_totals[emoji]
         if totals['total'] > 0:  # Only add if section has data
-            overall_stats.append({
+            stats = {
                 'Category': name,
                 'Total Expected': totals['expected'],
                 'Total Actual': totals['actual'],
                 'Difference': totals['actual'] - totals['expected'],
                 'Perfect Matches': f"{totals['perfect']}/{totals['total']}",
                 'Match Rate': f"{(totals['perfect']/totals['total']*100):.1f}%" if totals['total'] > 0 else "0.0%"
-            })
+            }
+            overall_stats.append(stats)
+            section_stats.append(stats)
     
     # Add grand total
     grand_total = {
@@ -435,6 +569,7 @@ def create_final_tally(output_dir: str) -> str:
         'Match Rate': f"{(sum(x['perfect'] for x in section_totals.values())/sum(x['total'] for x in section_totals.values())*100):.1f}%"
     }
     overall_stats.append(grand_total)
+    section_stats.append(grand_total)
     
     overall_table = tabulate(
         overall_stats,
@@ -444,7 +579,121 @@ def create_final_tally(output_dir: str) -> str:
     )
     table += f"{overall_table}\n"
     
-    return table
+    return table, pd.DataFrame(section_stats)
+
+def create_dataset_summary(output_dir: str) -> str:
+    """Create a summary table of dataset parameters"""
+    import json
+    
+    summaries = []
+    for dataset_dir in Path(output_dir).glob('dataset_*'):
+        params_file = dataset_dir / f'{dataset_dir.name}_params.json'
+        primers_file = dataset_dir / 'primers.tsv'
+        
+        if params_file.exists() and primers_file.exists():
+            # Load parameters
+            with open(params_file) as f:
+                params = json.load(f)
+            
+            # Load primers
+            primers_df = pd.read_csv(primers_file, sep='\t')
+            
+            # Calculate average GC content of primers
+            gc_content = []
+            for _, row in primers_df.iterrows():
+                fwd_gc = (row['Forward'].count('G') + row['Forward'].count('C')) / len(row['Forward'])
+                rev_gc = (row['Reverse'].count('G') + row['Reverse'].count('C')) / len(row['Reverse'])
+                gc_content.extend([fwd_gc, rev_gc])
+            avg_primer_gc = np.mean(gc_content)
+            
+            # Calculate average primer length
+            avg_primer_len = np.mean([len(row['Forward']) + len(row['Reverse']) 
+                                    for _, row in primers_df.iterrows()])
+            
+            # Get the category ratio (use the first category in the ratios dict)
+            category = next(iter(params['category_ratios']))
+            ratio = params['category_ratios'][category]
+            
+            summaries.append({
+                'Dataset': dataset_dir.name,
+                'Primer Sets': len(primers_df),
+                'Min Size': params['min_size'],
+                'Max Size': params['max_size'],
+                'Total Reads': params['total_reads'],
+                'Read GC Content': f"{params['gc_content']:.2f}",
+                'Avg Primer GC': f"{avg_primer_gc:.2f}",
+                'Avg Primer Length': f"{avg_primer_len:.1f}",
+                'Category': category,
+                'Category Ratio %': f"{ratio*100:.1f}%"
+            })
+    
+    if not summaries:
+        return "No datasets found!"
+    
+    # Create summary table
+    summary_df = pd.DataFrame(summaries)
+    table = "\n=== Dataset Parameters Summary ===\n\n"
+    table += tabulate(
+        summary_df,
+        headers='keys',
+        tablefmt='simple',
+        showindex=False
+    )
+    
+    return table, summary_df
+
+def save_to_excel(output_dir: str, tally_df: pd.DataFrame, summary_df: pd.DataFrame):
+    """Save tally and summary tables to an Excel file"""
+    excel_path = os.path.join(output_dir, 'test_datasets_report.xlsx')
+    
+    with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+        # Write the tally table
+        tally_df.to_excel(writer, sheet_name='Category Tally', index=False)
+        
+        # Write the summary table
+        summary_df.to_excel(writer, sheet_name='Dataset Summary', index=False)
+        
+        # Auto-adjust column widths
+        for sheet_name in writer.sheets:
+            worksheet = writer.sheets[sheet_name]
+            for column in worksheet.columns:
+                max_length = 0
+                column = [cell for cell in column]
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = (max_length + 2)
+                worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
+
+def run_uradime_analysis(dataset_dir):
+    """Run URAdime analysis on the generated dataset."""
+    bam_file = os.path.join(dataset_dir, "reads.bam")
+    primers_file = os.path.join(dataset_dir, "primers.csv")
+    
+    cmd = [
+        "uradime",
+        "--input", bam_file,
+        "--primers", primers_file,
+        "--check-termini",
+        "--max-distance", "0",
+        "--threads", "8"
+    ]
+    
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error running URAdime: {e}")
+        return None
+        
+    results_file = "uradime_results_summary.csv"
+    if not os.path.exists(results_file):
+        print(f"Results file not found: {results_file}")
+        return None
+        
+    return pd.read_csv(results_file)
 
 @click.command()
 @click.option('--output-dir', default='test_data', help='Output directory for test files')
@@ -452,7 +701,11 @@ def create_final_tally(output_dir: str) -> str:
 @click.option('--verbose', is_flag=True, help='Show detailed output')
 def main(output_dir: str, num_datasets: int, verbose: bool):
     """Generate multiple test datasets with varying parameters"""
-    os.makedirs(output_dir, exist_ok=True)
+    # Clear the output directory if it exists
+    if os.path.exists(output_dir):
+        import shutil
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
     
     for dataset_num in range(1, num_datasets + 1):
         dataset_dir = os.path.join(output_dir, f'dataset_{dataset_num}')
@@ -475,6 +728,24 @@ def main(output_dir: str, num_datasets: int, verbose: bool):
             
             # Generate reads
             reads = create_test_reads(primers_df, params)
+            
+            # Debug output for problematic categories
+            if verbose:
+                click.echo("\nSample reads from problematic categories:")
+                problem_cats = ['full_terminal_match_correct', 'full_terminal_match_wrong', 
+                              'single_terminal_correct', 'single_terminal_wrong',
+                              'paired_terminal_correct', 'paired_terminal_wrong',
+                              'multi_primer']
+                for cat in problem_cats:
+                    cat_reads = [r for r in reads if r['name'].startswith(cat)]
+                    if cat_reads:
+                        read = cat_reads[0]
+                        click.echo(f"\n{read['category']}:")
+                        click.echo(f"Name: {read['name']}")
+                        click.echo(f"Sequence length: {len(read['sequence'])}")
+                        click.echo(f"First 20 bases: {read['sequence'][:20]}...")
+                        click.echo(f"Last 20 bases: ...{read['sequence'][-20:]}")
+            
             bam_path = os.path.join(dataset_dir, 'reads.bam')
             create_bam_file(reads, bam_path)
             bar.update(1)
@@ -503,7 +774,10 @@ def main(output_dir: str, num_datasets: int, verbose: bool):
                 '-b', bam_path,
                 '-p', os.path.join(dataset_dir, 'primers.tsv'),
                 '-o', os.path.join(dataset_dir, 'uradime_results'),
-                '--max-distance', '0'
+                '--max-distance', '2',  # Allow for some mismatches in terminal matches
+                '--check-termini',  # Enable terminal matching
+                '--terminus-length', '15',  # Match our 15-base terminal fragments
+                '--size-tolerance', '0.1'  # 10% size tolerance
             ]
             
             subprocess.run(cmd, capture_output=not verbose)
@@ -528,9 +802,19 @@ def main(output_dir: str, num_datasets: int, verbose: bool):
                 click.echo(f"\nDataset {dataset_num} Results:")
                 click.echo(format_comparison_table(comparison))
     
-    # Display final tally
+    # Create and display final tally
     click.echo("\nFinal Tally:")
-    click.echo(create_final_tally(output_dir))
+    tally_table, tally_df = create_final_tally(output_dir)
+    click.echo(tally_table)
+    
+    # Create and display dataset summary
+    click.echo("\nDataset Summary:")
+    summary_table, summary_df = create_dataset_summary(output_dir)
+    # click.echo(summary_table)
+    
+    # Save both tables to Excel
+    save_to_excel(output_dir, tally_df, summary_df)
+    click.echo(f"\nTables have been saved to {os.path.join(output_dir, 'test_datasets_report.xlsx')}")
 
 if __name__ == '__main__':
     main() 

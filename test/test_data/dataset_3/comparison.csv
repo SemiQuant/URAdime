@@ -1,13 +1,16 @@
 Category,Count_expected,Percentage_expected,Count_actual,Percentage_actual
-🟥 Mismatched primer pairs (different primers),5.0,0.43668122270742354,5,0.4
-🟥 Multi-primer pairs (>1 primer at an end),0.0,0.0,0,0.0
-🟥 No primers or terminal matches detected,431.0,37.64192139737991,431,37.6
-🟥 One full primer + one terminal match - wrong size,0.0,0.0,0,0.0
-🟥 Paired terminal matches - wrong size,0.0,0.0,0,0.0
-🟥 Single terminal match only - wrong size,0.0,0.0,0,0.0
-"🟧 Matched pairs - correct orientation, wrong size",479.0,41.83406113537118,479,41.8
-🟨 One full primer + one terminal match - correct size,0.0,0.0,0,0.0
-🟨 Paired terminal matches - correct size,0.0,0.0,0,0.0
-🟨 Single terminal match only - correct size,0.0,0.0,0,0.0
-🟨 Single-end primers only (no terminal match),214.0,18.68995633187773,214,18.7
-🟩 Matched pairs - correct orientation and size,16.0,1.3973799126637554,16,1.4
+🟥 Mismatched primer pairs (different primers),3.0,0.32858707557502737,3.0,0.3
+🟥 Multi-primer pairs (>1 primer at an end),27.0,2.9572836801752467,0.0,0.0
+🟥 No primers or terminal matches detected,199.0,21.796276013143483,513.0,45.3
+🟥 One full primer + one terminal match - wrong size,0.0,0.0,8.0,0.7
+🟥 Paired terminal matches - wrong size,0.0,0.0,0.0,0.0
+🟥 Single terminal match only - wrong size,0.0,0.0,21.0,1.9
+"🟧 Matched pairs - correct orientation, wrong size",106.0,11.610076670317634,249.0,22.0
+🟨 One full primer + one terminal match - correct size,95.0,10.405257393209201,7.0,0.6
+🟨 One full primer + one terminal match - wrong size,96.0,10.514786418400876,0.0,0.0
+🟨 Paired terminal matches - correct size,52.0,5.695509309967141,0.0,0.0
+🟨 Paired terminal matches - wrong size,59.0,6.4622124863088715,0.0,0.0
+🟨 Single terminal match only - correct size,102.0,11.171960569550931,0.0,0.0
+🟨 Single terminal match only - wrong size,102.0,11.171960569550931,0.0,0.0
+🟨 Single-end primers only (no terminal match),58.0,6.352683461117197,311.0,27.5
+🟩 Matched pairs - correct orientation and size,14.0,1.5334063526834611,20.0,1.8
