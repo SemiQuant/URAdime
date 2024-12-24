@@ -773,10 +773,15 @@ def main(output_dir: str, num_datasets: int, verbose: bool):
                 '-b', bam_path,
                 '-p', os.path.join(dataset_dir, 'primers.tsv'),
                 '-o', os.path.join(dataset_dir, 'uradime_results'),
-                '--max-distance', '0'
+                '--max-distance', '0',
+                '--verbose'
             ]
             
-            subprocess.run(cmd, capture_output=not verbose)
+            result = subprocess.run(cmd, capture_output=not verbose)
+            if result.returncode != 0:
+                click.echo("URAdime analysis failed")
+                click.echo(result.stderr.decode())
+                return
             bar.update(1)
             
             # Load actual results and compare
