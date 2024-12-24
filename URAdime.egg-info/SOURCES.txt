@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+setup.cfg
+setup.py
+./URAdime/URAdime.py
+./URAdime/__init__.py
+URAdime/URAdime.py
+URAdime/__init__.py
+URAdime.egg-info/PKG-INFO
+URAdime.egg-info/SOURCES.txt
+URAdime.egg-info/dependency_links.txt
+URAdime.egg-info/entry_points.txt
+URAdime.egg-info/requires.txt
+URAdime.egg-info/top_level.txt
+tests/test_uradime.py

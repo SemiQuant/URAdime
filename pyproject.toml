@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "URAdime"
-version = "0.2.0"
+version = "0.2.1"
 authors = [
     { name="Jason D Limberis", email="Jason.Limberis@ucsf.edu" },
 ]
@@ -17,7 +17,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 keywords = ["PCR", "primers", "DNA", "sequencing", "analysis"]
-license = "MIT"
+license = { text = "MIT" }
 dependencies = [
     "pysam",
     "pandas",
@@ -34,10 +34,5 @@ dependencies = [
 [project.scripts]
 uradime = "URAdime.URAdime:main"
 
-[project.optional-dependencies]
-test = ["pytest"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-addopts = "-v"
+[tool.setuptools]
+packages = ["URAdime"]

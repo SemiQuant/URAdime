@@ -1,0 +1,6 @@
+pysam
+pandas
+biopython
+python-Levenshtein
+tqdm
+numpy
