@@ -1,3 +1,5 @@
+[![Python Tests](https://github.com/SemiQuant/URAdime/actions/workflows/python-app.yml/badge.svg)](https://github.com/SemiQuant/URAdime/actions/workflows/python-app.yml)
+
 # URAdime
 
 URAdime (Universal Read Analysis of DIMErs) is a Python package for analyzing primer sequences in sequencing data to identify dimers and chimeras.
