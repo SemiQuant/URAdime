@@ -24,7 +24,7 @@ def print_banner():
 ══════════════════════════════════════════════════════════════════════════════
                            URAdime v{:^7}                
                 Universal Read Analysis of DIMErs    
-════════════════════════════════════════════════════════════════════════════""".format("0.1.9")
+════════════════════════════════════════════════════════════════════════════""".format("0.2.0")
     print(banner)
 
 def load_primers(primer_file):
@@ -1075,6 +1075,52 @@ def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int
             traceback.print_exc()
         return None
 
+def save_filtered_bam(bam_path: str, matched_pairs: pd.DataFrame, output_bam: str):
+    """
+    Save a new BAM file containing only the reads from matched pairs with correct size and orientation.
+    
+    Args:
+        bam_path (str): Path to input BAM file
+        matched_pairs (pd.DataFrame): DataFrame containing matched pairs information
+        output_bam (str): Path to output BAM file
+    """
+    if matched_pairs.empty:
+        print("No matched pairs to save to BAM file")
+        return
+        
+    # Filter for correct size and orientation
+    correct_pairs = matched_pairs[
+        (matched_pairs['Correct_Orientation'] == True) & 
+        (matched_pairs['Size_Compliant'] == True)
+    ]
+    
+    if correct_pairs.empty:
+        print("No correctly oriented and sized pairs found")
+        return
+        
+    # Get set of read names for quick lookup
+    correct_read_names = set(correct_pairs['Read_Name'])
+    
+    try:
+        # Open input and output BAM files
+        with pysam.AlignmentFile(bam_path, "rb") as in_bam:
+            # Create output BAM with same header as input
+            with pysam.AlignmentFile(output_bam, "wb", header=in_bam.header) as out_bam:
+                print(f"Saving filtered reads to {output_bam}")
+                for read in tqdm(in_bam.fetch(until_eof=True)):
+                    if read.query_name in correct_read_names:
+                        out_bam.write(read)
+                        
+        # Index the output BAM file if possible
+        try:
+            pysam.index(output_bam)
+        except Exception as e:
+            print(f"Warning: Could not index output BAM file: {e}")
+            
+    except Exception as e:
+        print(f"Error saving filtered BAM file: {e}")
+        raise
+
 def parse_arguments():
     """Parse command line arguments for URAdime."""
     parser = argparse.ArgumentParser(
@@ -1187,6 +1233,11 @@ def parse_arguments():
         "--debug",
         action="store_true",
         help="Print detailed debug information for single-end primer reads"
+    )
+    
+    parser.add_argument(
+        "--filtered-bam",
+        help="Output BAM file containing only correctly matched and sized reads"
     )
     
     return parser.parse_args()
@@ -1461,6 +1512,10 @@ def main():
         
         # Save results
         save_results(results, args.output, primers_df)
+        
+        # Save filtered BAM if requested
+        if args.filtered_bam and not results['matched_pairs'].empty:
+            save_filtered_bam(args.bam, results['matched_pairs'], args.filtered_bam)
         
         # Print summary to console
         print("\nAnalysis Summary:")

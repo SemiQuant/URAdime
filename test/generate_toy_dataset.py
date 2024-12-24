@@ -3,6 +3,7 @@ from Bio.Seq import Seq
 import random
 import pandas as pd
 import os
+from pathlib import Path
 
 # Set fixed random seed for reproducibility
 random.seed(42)
@@ -24,8 +25,10 @@ def create_test_primers():
         'Size': [200, 250, 400]  # Expected amplicon sizes
     }
     
+    # Ensure test directory exists
+    Path('test/data').mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(primers)
-    df.to_csv('test_primers.tsv', sep='\t', index=False)
+    df.to_csv('test/data/test_primers.tsv', sep='\t', index=False)
     return primers
 
 def get_fixed_sequence(length, seed_multiplier=1):
@@ -93,7 +96,10 @@ def create_test_bam():
     read_count = 0
     buffer = "GGGGGG"
     
-    with pysam.AlignmentFile('test_reads.bam', 'wb', header=header) as outf:
+    # Ensure test directory exists
+    Path('test/data').mkdir(parents=True, exist_ok=True)
+    
+    with pysam.AlignmentFile('test/data/test_reads.bam', 'wb', header=header) as outf:
         # Generate different types of reads for each primer pair
         for i, (name, fwd, rev, size) in enumerate(zip(primers['Name'], 
                                                       primers['Forward'], 
@@ -228,9 +234,9 @@ def create_test_bam():
                 read_count += 1
 
     # Sort and index BAM file
-    pysam.sort('-o', 'test_data.bam', 'test_reads.bam')
-    os.remove('test_reads.bam')
-    pysam.index('test_data.bam')
+    pysam.sort('-o', 'test/data/test_data.bam', 'test/data/test_reads.bam')
+    os.remove('test/data/test_reads.bam')
+    pysam.index('test/data/test_data.bam')
     
     print(f"Total reads created: {read_count}")
 
