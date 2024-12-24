@@ -115,12 +115,21 @@ def check_terminal_match(sequence, primer, terminus_length=15, max_distance=2):
     Returns:
         tuple: (bool, int) - (whether match found, length of longest match found)
     """
-    if len(sequence) < terminus_length or len(primer) < terminus_length:
+    if not sequence or not primer:
         return False, 0
         
+    # Convert sequences to uppercase
+    sequence = str(sequence).upper()
+    primer = str(primer).upper()
+    
+    # Get reverse complement of primer
     primer_rc = str(Seq(primer).reverse_complement())
     best_match_length = 0
     found_match = False
+    
+    # Adjust terminus length if sequences are shorter
+    effective_terminus_length = min(terminus_length, len(sequence), len(primer))
+    max_check_length = min(len(sequence), len(primer))
     
     # Check all possible combinations:
     # 1. Start of sequence vs start of primer
@@ -129,21 +138,32 @@ def check_terminal_match(sequence, primer, terminus_length=15, max_distance=2):
     # 4. End of sequence vs end of primer
     
     combinations = [
-        (sequence[:terminus_length], primer[:terminus_length]),  # Start vs Start
-        (sequence[:terminus_length], primer_rc[-terminus_length:]),  # Start vs RC End
-        (sequence[-terminus_length:], primer_rc[:terminus_length]),  # End vs RC Start
-        (sequence[-terminus_length:], primer[-terminus_length:])  # End vs End
+        (sequence[:max_check_length], primer),  # Start vs Start
+        (sequence[:max_check_length], primer_rc[::-1]),  # Start vs RC End
+        (sequence[-max_check_length:], primer_rc),  # End vs RC Start
+        (sequence[-max_check_length:], primer[::-1])  # End vs End
     ]
     
-    for seq_part, primer_part in combinations:
-        # Try progressively larger windows
-        for window_size in range(terminus_length, min(len(sequence), len(primer)) + 1):
-            if len(seq_part) >= window_size and len(primer_part) >= window_size:
-                if is_match(seq_part[:window_size], primer_part[:window_size], max_distance):
-                    found_match = True
-                    best_match_length = max(best_match_length, window_size)
-                else:
-                    break  # Stop increasing window size if no match found
+    for seq, target in combinations:
+        # Try progressively larger windows starting from terminus_length
+        for window_size in range(effective_terminus_length, len(seq) + 1):
+            # Check both start and end of sequence
+            seq_start = seq[:window_size]
+            target_start = target[:window_size]
+            
+            if len(seq_start) != len(target_start):
+                continue
+                
+            # Calculate mismatches considering N's
+            mismatches = sum(1 for s, t in zip(seq_start, target_start)
+                           if s != t and s != 'N' and t != 'N')
+            
+            if mismatches <= max_distance:
+                found_match = True
+                best_match_length = max(best_match_length, window_size)
+            else:
+                # If we find a mismatch, no need to try larger windows
+                break
     
     return found_match, best_match_length
 
@@ -252,8 +272,8 @@ def find_primers_in_region(sequence, primers_df, window_size=20, max_distance=2,
         # Add filtered matches to results
         full_matches = [match['name'] for match in filtered_matches]
     
-    # Handle terminal matches if needed and no full matches were found
-    if check_termini and not full_matches:
+    # Always check for terminal matches, regardless of full matches
+    if check_termini:
         for _, primer in primers_df.iterrows():
             # Check forward primer terminal matches
             fwd_match_found, fwd_match_length = check_terminal_match(
@@ -920,7 +940,22 @@ def is_size_compliant(row, primers_df, size_tolerance=0.10):
     if 'Read_Length' not in row:
         return False
         
-    primer_name = get_base_primer_name(row['Start_Primers'])
+    # Try to get primer name from various sources
+    primer_name = None
+    
+    # Check full matches first
+    if row['Start_Primers'] != 'None':
+        primer_name = get_base_primer_name(row['Start_Primers'])
+    elif row['End_Primers'] != 'None':
+        primer_name = get_base_primer_name(row['End_Primers'])
+    
+    # If no full matches, check terminal matches
+    if primer_name is None:
+        if row['Start_Terminal_Matches'] != 'None':
+            primer_name = get_base_primer_name(row['Start_Terminal_Matches'])
+        elif row['End_Terminal_Matches'] != 'None':
+            primer_name = get_base_primer_name(row['End_Terminal_Matches'])
+    
     if primer_name is None or primers_df.empty:
         return False
     
@@ -932,9 +967,64 @@ def is_size_compliant(row, primers_df, size_tolerance=0.10):
         return False
         
     expected_size = primer_info['Size'].iloc[0]
-    tolerance = expected_size * size_tolerance
+    base_tolerance = expected_size * size_tolerance
     
-    return abs(row['Read_Length'] - expected_size) <= tolerance
+    # Determine the type of match
+    is_terminal_only = (row['Start_Primers'] == 'None' and row['End_Primers'] == 'None' and 
+                       (row['Start_Terminal_Matches'] != 'None' or row['End_Terminal_Matches'] != 'None'))
+                       
+    is_paired_terminal = (row['Start_Primers'] == 'None' and row['End_Primers'] == 'None' and 
+                         row['Start_Terminal_Matches'] != 'None' and row['End_Terminal_Matches'] != 'None')
+                       
+    is_hybrid = ((row['Start_Primers'] != 'None' and row['End_Primers'] == 'None' and row['End_Terminal_Matches'] != 'None') or
+                 (row['Start_Primers'] == 'None' and row['End_Primers'] != 'None' and row['Start_Terminal_Matches'] != 'None'))
+    
+    # Get primer lengths for more accurate size checking
+    forward_len = len(primer_info['Forward'].iloc[0])
+    reverse_len = len(primer_info['Reverse'].iloc[0])
+    
+    if is_paired_terminal:
+        # For paired terminal matches, we expect the read to be shorter than the full size
+        # since we only have parts of both primers
+        max_allowed = expected_size + base_tolerance  # Allow some tolerance above expected size
+        min_allowed = expected_size * 0.3  # Allow reads down to 30% of expected size for paired terminals
+        
+        # Check if the terminal matches are from the same primer pair
+        start_primer = get_base_primer_name(row['Start_Terminal_Matches'])
+        end_primer = get_base_primer_name(row['End_Terminal_Matches'])
+        
+        # For paired terminals, we need both primers to be from the same pair
+        if start_primer != end_primer or start_primer != primer_name:
+            return False
+            
+        # For paired terminals, also check that we have both forward and reverse orientations
+        start_orient = row['Start_Terminal_Matches'].split('_')[-3]  # Get orientation before _Terminal_
+        end_orient = row['End_Terminal_Matches'].split('_')[-3]  # Get orientation before _Terminal_
+        
+        # Check for correct orientation (Forward at start, Reverse at end or vice versa)
+        has_correct_orientation = ((start_orient.startswith('Forward') and end_orient.startswith('Reverse')) or
+                                 (start_orient.startswith('Reverse') and end_orient.startswith('Forward')))
+        if not has_correct_orientation:
+            return False
+            
+        return min_allowed <= row['Read_Length'] <= max_allowed
+        
+    elif is_terminal_only and not is_paired_terminal:
+        # For single terminal matches, we expect the read to be shorter than the full size
+        # since we're missing one primer and have a partial match of the other
+        max_allowed = expected_size + base_tolerance  # Allow some tolerance above expected size
+        min_allowed = expected_size * 0.4  # Allow reads down to 40% of expected size
+        return min_allowed <= row['Read_Length'] <= max_allowed
+        
+    elif is_hybrid:
+        # For hybrid matches, we have one full primer and one partial
+        max_allowed = expected_size + base_tolerance  # Allow some tolerance above expected size
+        min_allowed = expected_size * 0.6  # Allow reads down to 60% of expected size
+        return min_allowed <= row['Read_Length'] <= max_allowed
+        
+    else:
+        # For full matches, use standard tolerance
+        return abs(row['Read_Length'] - expected_size) <= base_tolerance
 
 def parallel_analysis_pipeline(bam_path: str, primer_file: str, window_size: int = 20,
                              num_threads: int = 4, max_reads: int = 200, chunk_size: int = 50,
@@ -1529,3 +1619,6 @@ def main():
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)
         return 1
+
+if __name__ == '__main__':
+    sys.exit(main())
