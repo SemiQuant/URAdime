@@ -20,7 +20,12 @@ import sys
 import random
 
 def print_banner():
-    print("banner")
+    banner = """
+══════════════════════════════════════════════════════════════════════════════
+                           URAdime v{:^7}                
+                Universal Read Analysis of DIMErs    
+════════════════════════════════════════════════════════════════════════════""".format("0.2.0")
+    print(banner)
 
 def load_primers(primer_file):
     """

@@ -1,7 +1,10 @@
 Primer_Name,Total_Appearances,Percentage_of_Total_Reads,Correct_Orientation_Percentage,Size_Compliant_Percentage,Correct_Orientation_and_Size_Percentage
-Pair1,50,6.13,100.0,82.0,82.0
-Pair2,49,6.0,100.0,83.67,83.67
-Pair3,49,6.0,100.0,83.67,83.67
-Pair4,49,6.0,100.0,83.67,83.67
-Pair5,49,6.0,100.0,83.67,83.67
-Pair6,49,6.0,100.0,83.67,83.67
+Pair1,45,3.95,100.0,80.0,80.0
+Pair2,45,3.95,100.0,80.0,80.0
+Pair3,45,3.95,100.0,80.0,80.0
+Pair4,45,3.95,100.0,80.0,80.0
+Pair5,45,3.95,100.0,80.0,80.0
+Pair6,44,3.87,100.0,81.82,81.82
+Pair7,43,3.78,100.0,81.4,81.4
+Pair8,43,3.78,100.0,81.4,81.4
+Pair9,43,3.78,100.0,81.4,81.4

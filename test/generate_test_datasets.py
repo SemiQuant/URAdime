@@ -146,31 +146,65 @@ def generate_non_matching_sequence(length: int, avoid_seq: str, gc_content: floa
 def get_valid_size_with_terminal(size: int, primers_df: pd.DataFrame, index: int) -> int:
     """Get a valid size that accounts for terminal matches"""
     row = primers_df.iloc[index]
-    # For terminal matches, we want the total size to be within tolerance
-    target_size = size  # Use the full target size
+    # For terminal matches with one full primer, we need to account for:
+    # - One full primer length
+    # - One 15bp terminal match
+    full_primer_len = len(row['Forward'])  # Using forward as the full primer
+    terminal_len = 15  # Standard terminal match length
+    
+    # Calculate the target insert size (excluding primers)
+    target_insert = size - (full_primer_len + terminal_len)
     
     # Calculate tolerance range (9.5% to be safe within URAdime's 10% tolerance)
-    min_size = int(target_size * 0.905)
-    max_size = int(target_size * 1.095)
+    min_size = int(target_insert * 0.905)
+    max_size = int(target_insert * 1.095)
     
-    return random.randint(min_size, max_size)
+    # Generate a size that will result in the total read length being within tolerance
+    valid_size = random.randint(min_size, max_size)
+    total_size = valid_size + full_primer_len + terminal_len
+    
+    # Verify that the total size is within tolerance of the target size
+    while abs(total_size - size) / size > 0.095:
+        valid_size = random.randint(min_size, max_size)
+        total_size = valid_size + full_primer_len + terminal_len
+    
+    return valid_size
 
 def get_invalid_size_with_terminal(size: int, primers_df: pd.DataFrame, index: int) -> int:
     """Get an invalid size that accounts for terminal matches"""
     row = primers_df.iloc[index]
-    target_size = size  # Use the full target size
+    # For terminal matches with one full primer, we need to account for:
+    # - One full primer length
+    # - One 15bp terminal match
+    full_primer_len = len(row['Forward'])  # Using forward as the full primer
+    terminal_len = 15  # Standard terminal match length
+    
+    # Calculate the target insert size (excluding primers)
+    target_insert = size - (full_primer_len + terminal_len)
     
     # Generate a size that's either too small or too large
     if random.random() < 0.5:
-        # Too small: less than 90% of target
-        min_size = max(50, int(target_size * 0.5))  # At least 50 bases or 50% of target size
-        max_size = int(target_size * 0.89)  # Just under 90%
+        # Too small: less than 30% of target
+        min_size = max(30, int(target_insert * 0.2))  # At least 30 bases or 20% of target size
+        max_size = int(target_insert * 0.29)  # Just under 30%
     else:
         # Too large: more than 110% of target
-        min_size = int(target_size * 1.11)  # Just over 110%
-        max_size = int(target_size * 1.5)   # Up to 150% of target size
+        min_size = int(target_insert * 1.2)
+        max_size = int(target_insert * 3.0)
     
-    return random.randint(min_size, max_size)
+    # Generate an invalid size
+    invalid_size = random.randint(min_size, max_size)
+    total_size = invalid_size + full_primer_len + terminal_len
+    
+    # Verify that the total size is outside tolerance
+    while abs(total_size - size) / size <= 0.105:
+        if random.random() < 0.5:
+            invalid_size = max(30, int(target_insert * random.uniform(0.2, 0.29)))
+        else:
+            invalid_size = int(target_insert * random.uniform(1.2, 3.0))
+        total_size = invalid_size + full_primer_len + terminal_len
+    
+    return invalid_size
 
 def create_test_reads(primers_df: pd.DataFrame, params: Dict) -> List[Dict]:
     """Create test reads for each category with varying parameters"""
