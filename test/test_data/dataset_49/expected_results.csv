@@ -1,6 +1,0 @@
-Category,Count,Percentage
-🟨 Single-end primers only (no terminal match),143,14.973821989528796
-🟥 Mismatched primer pairs (different primers),8,0.8376963350785341
-"🟧 Matched pairs - correct orientation, wrong size",396,41.46596858638743
-🟩 Matched pairs - correct orientation and size,32,3.3507853403141366
-🟥 No primers or terminal matches detected,376,39.3717277486911

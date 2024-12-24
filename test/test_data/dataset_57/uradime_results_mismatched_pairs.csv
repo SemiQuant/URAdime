@@ -1,9 +1,0 @@
-Read_Name,Start_Primers,End_Primers,Start_Terminal_Matches,End_Terminal_Matches,Read_Length,Start_Region_Length,End_Region_Length,Is_Paired,Is_Unmapped,Start_Primer_Count,End_Primer_Count,Start_Primer_Name,End_Primer_Name
-mismatched_pairs_Pair2_1,Pair2_Forward,Pair3_Reverse,None,None,527,55,55,False,True,1,1,Pair2,Pair3
-mismatched_pairs_Pair3_2,Pair3_Forward,Pair1_Reverse,None,None,811,55,55,False,True,1,1,Pair3,Pair1
-mismatched_pairs_Pair3_5,Pair3_Forward,Pair1_Reverse,None,None,831,55,55,False,True,1,1,Pair3,Pair1
-mismatched_pairs_Pair1_0,Pair1_Forward,Pair2_Reverse,None,None,846,55,55,False,True,1,1,Pair1,Pair2
-mismatched_pairs_Pair2_4,Pair2_Forward,Pair3_Reverse,None,None,508,55,55,False,True,1,1,Pair2,Pair3
-mismatched_pairs_Pair1_3,Pair1_Forward,Pair2_Reverse,None,None,805,55,55,False,True,1,1,Pair1,Pair2
-mismatched_pairs_Pair1_6,Pair1_Forward,Pair2_Reverse,None,None,774,55,55,False,True,1,1,Pair1,Pair2
-mismatched_pairs_Pair2_7,Pair2_Forward,Pair3_Reverse,None,None,473,55,55,False,True,1,1,Pair2,Pair3

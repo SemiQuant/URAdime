@@ -491,7 +491,7 @@ def create_final_tally(output_dir: str) -> Tuple[str, pd.DataFrame]:
             'Total Actual': total_actual,
             'Difference': total_actual - total_expected,
             'Perfect Matches': f"{perfect_matches}/{num_datasets}",
-            'Match Rate': f"{perfect_matches/num_datasets*100:.1f}%"
+            'Match Rate': f"{(total_actual/total_expected*100):.1f}%" if total_expected > 0 else "0.0%"
         })
     
     # Create summary table
@@ -554,19 +554,19 @@ def create_final_tally(output_dir: str) -> Tuple[str, pd.DataFrame]:
                 'Total Actual': totals['actual'],
                 'Difference': totals['actual'] - totals['expected'],
                 'Perfect Matches': f"{totals['perfect']}/{totals['total']}",
-                'Match Rate': f"{(totals['perfect']/totals['total']*100):.1f}%" if totals['total'] > 0 else "0.0%"
+                'Match Rate': f"{(totals['actual']/totals['expected']*100):.1f}%" if totals['expected'] > 0 else "0.0%"
             }
             overall_stats.append(stats)
             section_stats.append(stats)
     
-    # Add grand total
+    # Add grand total with updated match rate calculation
     grand_total = {
         'Category': 'Grand Total',
         'Total Expected': sum(x['expected'] for x in section_totals.values()),
         'Total Actual': sum(x['actual'] for x in section_totals.values()),
         'Difference': sum(x['actual'] - x['expected'] for x in section_totals.values()),
         'Perfect Matches': f"{sum(x['perfect'] for x in section_totals.values())}/{sum(x['total'] for x in section_totals.values())}",
-        'Match Rate': f"{(sum(x['perfect'] for x in section_totals.values())/sum(x['total'] for x in section_totals.values())*100):.1f}%"
+        'Match Rate': f"{(sum(x['actual'] for x in section_totals.values())/sum(x['expected'] for x in section_totals.values())*100):.1f}%"
     }
     overall_stats.append(grand_total)
     section_stats.append(grand_total)
@@ -677,7 +677,6 @@ def run_uradime_analysis(dataset_dir):
         "uradime",
         "--input", bam_file,
         "--primers", primers_file,
-        "--check-termini",
         "--max-distance", "0",
         "--threads", "8"
     ]
@@ -774,10 +773,7 @@ def main(output_dir: str, num_datasets: int, verbose: bool):
                 '-b', bam_path,
                 '-p', os.path.join(dataset_dir, 'primers.tsv'),
                 '-o', os.path.join(dataset_dir, 'uradime_results'),
-                '--max-distance', '2',  # Allow for some mismatches in terminal matches
-                '--check-termini',  # Enable terminal matching
-                '--terminus-length', '15',  # Match our 15-base terminal fragments
-                '--size-tolerance', '0.1'  # 10% size tolerance
+                '--max-distance', '0'
             ]
             
             subprocess.run(cmd, capture_output=not verbose)
