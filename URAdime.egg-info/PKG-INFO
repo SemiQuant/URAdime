@@ -1,16 +1,14 @@
 Metadata-Version: 2.1
 Name: URAdime
-Version: 0.2.1
+Version: 0.2.2
 Summary: Universal Read Analysis of DIMErs
-Home-page: https://github.com/SemiQuant/URAdime
-Author: Jason D Limberis
 Author-email: Jason D Limberis <Jason.Limberis@ucsf.edu>
-License: MIT
+License: GPL-3.0
 Project-URL: Homepage, https://github.com/SemiQuant/URAdime
 Project-URL: Bug Tracker, https://github.com/SemiQuant/URAdime/issues
 Keywords: PCR,primers,DNA,sequencing,analysis
 Classifier: Programming Language :: Python :: 3
-Classifier: License :: OSI Approved :: MIT License
+Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)
 Classifier: Operating System :: OS Independent
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown

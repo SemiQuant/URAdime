@@ -1,9 +1,8 @@
 Start_Primers,End_Primers,Occurrence_Count,Percent_of_Total_Reads
-Pair2_Forward,Pair2_Reverse,51,4.65
-Pair1_Forward,Pair1_Reverse,50,4.56
-Pair3_Forward,Pair3_Reverse,50,4.56
-Pair4_Forward,Pair4_Reverse,49,4.47
-Pair5_Forward,Pair5_Reverse,49,4.47
-Pair6_Forward,Pair6_Reverse,48,4.38
-Pair7_Forward,Pair7_Reverse,48,4.38
-Pair8_Forward,Pair8_Reverse,48,4.38
+Pair2_Forward,Pair2_Reverse,50,5.19
+Pair1_Forward,Pair1_Reverse,49,5.08
+Pair3_Forward,Pair3_Reverse,49,5.08
+Pair4_Forward,Pair4_Reverse,49,5.08
+Pair5_Forward,Pair5_Reverse,48,4.98
+Pair6_Forward,Pair6_Reverse,48,4.98
+Pair7_Forward,Pair7_Reverse,48,4.98

@@ -1,21 +1,21 @@
 {
   "num_primers": 9,
-  "min_size": 161,
-  "max_size": 942,
-  "total_reads": 856,
-  "gc_content": 0.5685095354942216,
+  "min_size": 158,
+  "max_size": 613,
+  "total_reads": 1085,
+  "gc_content": 0.4706254811360661,
   "category_ratios": {
-    "no_primers": 0.06199404467464003,
-    "correct_pairs": 0.29482279668095535,
-    "wrong_size": 0.06638323531232955,
-    "single_end": 0.06299976362205101,
-    "mismatched_pairs": 0.06493855823884344,
-    "full_terminal_match_correct": 0.06541100996573862,
-    "full_terminal_match_wrong": 0.06412096847037747,
-    "single_terminal_correct": 0.06996260025528775,
-    "single_terminal_wrong": 0.06758031767643272,
-    "paired_terminal_correct": 0.06009456937299434,
-    "paired_terminal_wrong": 0.06643103424433375,
-    "multi_primer": 0.06077555078177958
+    "no_primers": 0.06818292642103578,
+    "correct_pairs": 0.29165386397941745,
+    "wrong_size": 0.06513390357322509,
+    "single_end": 0.06025883109875644,
+    "mismatched_pairs": 0.061970653743717616,
+    "full_terminal_match_correct": 0.06050861709383903,
+    "full_terminal_match_wrong": 0.06061982386586795,
+    "single_terminal_correct": 0.06054349559303086,
+    "single_terminal_wrong": 0.06841206944698536,
+    "paired_terminal_correct": 0.06990823403654424,
+    "paired_terminal_wrong": 0.06381171329282799,
+    "multi_primer": 0.06834536802327633
   }
 }

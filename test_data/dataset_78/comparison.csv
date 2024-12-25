@@ -1,13 +1,13 @@
 Category,Count_expected,Percentage_expected,Count_actual,Percentage_actual
-🟥 Mismatched primer pairs (different primers),82,6.873428331936295,82,6.9
-🟥 Multi-primer pairs (>1 primer at an end),79,6.621961441743504,79,6.6
-🟥 No primers or terminal matches detected,76,6.3704945515507125,76,6.4
-🟥 One full primer + one terminal match - wrong size,74,6.202849958088851,74,6.2
-🟥 Paired terminal matches - wrong size,81,6.789606035205365,65,5.4
-🟥 Single terminal match only - wrong size,81,6.789606035205365,81,6.8
-"🟧 Matched pairs - correct orientation, wrong size",73,6.119027661357921,73,6.1
-🟨 One full primer + one terminal match - correct size,71,5.951383067896061,71,6.0
-🟨 Paired terminal matches - correct size,77,6.454316848281643,93,7.8
-🟨 Single terminal match only - correct size,76,6.3704945515507125,76,6.4
-🟨 Single-end primers only (no terminal match),74,6.202849958088851,74,6.2
-🟩 Matched pairs - correct orientation and size,349,29.253981559094722,349,29.3
+🟥 Mismatched primer pairs (different primers),67,6.014362657091562,67,6.0
+🟥 Multi-primer pairs (>1 primer at an end),70,6.283662477558348,70,6.3
+🟥 No primers or terminal matches detected,75,6.732495511669659,75,6.7
+🟥 One full primer + one terminal match - wrong size,67,6.014362657091562,67,6.0
+🟥 Paired terminal matches - wrong size,72,6.463195691202872,57,5.1
+🟥 Single terminal match only - wrong size,76,6.822262118491921,75,6.7
+"🟧 Matched pairs - correct orientation, wrong size",73,6.552962298025135,73,6.6
+🟨 One full primer + one terminal match - correct size,66,5.9245960502693,67,6.0
+🟨 Paired terminal matches - correct size,73,6.552962298025135,87,7.8
+🟨 Single terminal match only - correct size,70,6.283662477558348,70,6.3
+🟨 Single-end primers only (no terminal match),77,6.912028725314183,78,7.0
+🟩 Matched pairs - correct orientation and size,328,29.443447037701976,328,29.4

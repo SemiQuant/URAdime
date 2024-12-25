@@ -426,7 +426,7 @@ def process_read_chunk(chunk: List[Dict], primers_df: pd.DataFrame,
             max_distance=max_distance,
             check_termini=check_termini,
             terminus_length=terminus_length,
-            overlap_threshold=overlap_threshold  # Pass the parameter
+            overlap_threshold=overlap_threshold
         )
         
         # Process end primers with reversed sequence
@@ -437,7 +437,7 @@ def process_read_chunk(chunk: List[Dict], primers_df: pd.DataFrame,
             max_distance=max_distance,
             check_termini=check_termini,
             terminus_length=terminus_length,
-            overlap_threshold=overlap_threshold  # Pass the parameter
+            overlap_threshold=overlap_threshold
         )
         
         # Store results (rest of function remains the same)

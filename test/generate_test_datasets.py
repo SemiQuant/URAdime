@@ -641,14 +641,11 @@ def create_dataset_summary(output_dir: str) -> str:
             avg_primer_gc = np.mean(gc_content)
             
             # Calculate average primer length
-            avg_primer_len = np.mean([len(row['Forward']) + len(row['Reverse']) 
-                                    for _, row in primers_df.iterrows()])
+            avg_primer_len = np.mean([len(row['Forward']) for _, row in primers_df.iterrows()] + 
+                            [len(row['Reverse']) for _, row in primers_df.iterrows()])
             
-            # Get the category ratio (use the first category in the ratios dict)
-            category = next(iter(params['category_ratios']))
-            ratio = params['category_ratios'][category]
-            
-            summaries.append({
+            # Create base summary
+            summary = {
                 'Dataset': dataset_dir.name,
                 'Primer Sets': len(primers_df),
                 'Min Size': params['min_size'],
@@ -657,15 +654,26 @@ def create_dataset_summary(output_dir: str) -> str:
                 'Read GC Content': f"{params['gc_content']:.2f}",
                 'Avg Primer GC': f"{avg_primer_gc:.2f}",
                 'Avg Primer Length': f"{avg_primer_len:.1f}",
-                'Category': category,
-                'Category Ratio %': f"{ratio*100:.1f}%"
-            })
+            }
+            
+            # Add all category ratios
+            for category, ratio in params['category_ratios'].items():
+                summary[f"{category} %"] = f"{ratio*100:.1f}%"
+            
+            summaries.append(summary)
     
     if not summaries:
         return "No datasets found!"
     
     # Create summary table
     summary_df = pd.DataFrame(summaries)
+    
+    # Reorder columns to group related information
+    base_cols = ['Dataset', 'Primer Sets', 'Min Size', 'Max Size', 'Total Reads', 
+                 'Read GC Content', 'Avg Primer GC', 'Avg Primer Length']
+    category_cols = [col for col in summary_df.columns if col.endswith('%')]
+    summary_df = summary_df[base_cols + sorted(category_cols)]
+    
     table = "\n=== Dataset Parameters Summary ===\n\n"
     table += tabulate(
         summary_df,
@@ -728,17 +736,52 @@ def run_uradime_analysis(dataset_dir):
         
     return pd.read_csv(results_file)
 
+def create_metrics_summary(summary_df: pd.DataFrame) -> str:
+    """Create a summary of key metrics across all datasets"""
+    metrics = {
+        'Primer Sets': summary_df['Primer Sets'].astype(float),
+        'Min Size': summary_df['Min Size'].astype(float),
+        'Max Size': summary_df['Max Size'].astype(float),
+        'Total Reads': summary_df['Total Reads'].astype(float),
+        'Read GC': summary_df['Read GC Content'].astype(float),
+        'Primer GC': summary_df['Avg Primer GC'].astype(float),
+        'Primer Length': summary_df['Avg Primer Length'].astype(float)
+    }
+    
+    summary_stats = pd.DataFrame({
+        'Min': {k: v.min() for k, v in metrics.items()},
+        'Max': {k: v.max() for k, v in metrics.items()},
+        'Average': {k: v.mean() for k, v in metrics.items()},
+        'SD': {k: v.std() for k, v in metrics.items()}
+    }).round(2)
+    
+    table = "\n=== Final Metrics Summary ===\n\n"
+    table += tabulate(
+        summary_stats,
+        headers='keys',
+        tablefmt='simple',
+        showindex=True
+    )
+    return table
+
 @click.command()
 @click.option('--output-dir', default='test_data', help='Output directory for test files')
 @click.option('--num-datasets', default=10, help='Number of datasets to generate')
 @click.option('--verbose', is_flag=True, help='Show detailed output')
-def main(output_dir: str, num_datasets: int, verbose: bool):
+@click.option('--seed', default=1987, help='Random seed for reproducible generation')
+def main(output_dir: str, num_datasets: int, verbose: bool, seed: int):
     """Generate multiple test datasets with varying parameters"""
+    # Set random seed for reproducibility
+    random.seed(seed)
+    np.random.seed(seed)
+    
     # Clear the output directory if it exists
     if os.path.exists(output_dir):
         import shutil
         shutil.rmtree(output_dir)
     os.makedirs(output_dir)
+    
+    click.echo(f"Using random seed: {seed}")
     
     for dataset_num in range(1, num_datasets + 1):
         dataset_dir = os.path.join(output_dir, f'dataset_{dataset_num}')
@@ -840,9 +883,12 @@ def main(output_dir: str, num_datasets: int, verbose: bool):
     # Create and display dataset summary
     click.echo("\nDataset Summary:")
     summary_table, summary_df = create_dataset_summary(output_dir)
-    # click.echo(summary_table)
     
-    # Save both tables to Excel
+    # Create and display metrics summary
+    metrics_table = create_metrics_summary(summary_df)
+    click.echo(metrics_table)
+    
+    # Save tables to Excel
     save_to_excel(output_dir, tally_df, summary_df)
     click.echo(f"\nTables have been saved to {os.path.join(output_dir, 'test_datasets_report.xlsx')}")
 
