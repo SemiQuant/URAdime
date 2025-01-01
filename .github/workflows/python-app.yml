@@ -29,8 +29,9 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install .[test]
+        python -m pip install .[test]
+        pip list  # Verify installed packages
         
     - name: Run tests
       run: |
-        pytest
+        python -m pytest

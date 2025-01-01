@@ -34,5 +34,15 @@ dependencies = [
 [project.scripts]
 uradime = "URAdime.URAdime:main"
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0"
+]
+
+[tool.pytest.ini_options]
+addopts = "-v --cov=URAdime"
+testpaths = ["tests"]
+
 [tool.setuptools]
 packages = ["URAdime"]
