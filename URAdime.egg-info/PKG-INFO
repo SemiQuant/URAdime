@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: URAdime
-Version: 0.2.3
+Version: 0.2.4
 Summary: Universal Read Analysis of DIMErs
 Author-email: Jason D Limberis <Jason.Limberis@ucsf.edu>
 License: GPL-3.0
@@ -18,6 +18,9 @@ Requires-Dist: biopython
 Requires-Dist: python-Levenshtein
 Requires-Dist: tqdm
 Requires-Dist: numpy
+Provides-Extra: test
+Requires-Dist: pytest>=7.0.0; extra == "test"
+Requires-Dist: pytest-cov>=4.0.0; extra == "test"
 
 [![Python Tests](https://github.com/SemiQuant/URAdime/actions/workflows/python-app.yml/badge.svg)](https://github.com/SemiQuant/URAdime/actions/workflows/python-app.yml)
 
